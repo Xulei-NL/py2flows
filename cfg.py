@@ -4,24 +4,19 @@ import graphviz as gv
 import os
 import ast
 import sys
+import logging
 from typing import Dict, List, Tuple, Set, Optional, Type, Any
 
-
-class SingletonMeta(type):
-    _instance: Optional[BlockId] = None
-
-    def __call__(self) -> BlockId:
-        if self._instance is None:
-            self._instance = super().__call__()
-        return self._instance
+logging.basicConfig(level=logging.DEBUG)
 
 
-class BlockId(metaclass=SingletonMeta):
+class BlockId:
     counter: int = 0
 
-    def gen(self) -> int:
-        self.counter += 1
-        return self.counter
+    @classmethod
+    def gen_block_id(cls) -> int:
+        cls.counter += 1
+        return cls.counter
 
 
 class BasicBlock(object):
@@ -79,6 +74,8 @@ class CallBlock(BasicBlock):
     def __init__(self, bid: int):
         super().__init__(bid)
         self.args: List[str] = []
+        self.call = bid
+        self.exit = BlockId.gen_block_id()
 
 
 class TryBlock(BasicBlock):
@@ -199,13 +196,16 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = new_block
 
     def new_block(self) -> BasicBlock:
-        bid: int = BlockId().gen()
+        bid: int = BlockId.gen_block_id()
         self.cfg.blocks[bid] = BasicBlock(bid)
         return self.cfg.blocks[bid]
 
-    def new_func_block(self) -> FuncBlock:
-        bid: int = BlockId().gen()
+    def new_func_block(self, bid: int) -> FuncBlock:
         self.cfg.blocks[bid] = FuncBlock(bid)
+        return self.cfg.blocks[bid]
+
+    def new_call_block(self, bid: int) -> CallBlock:
+        self.cfg.blocks[bid] = CallBlock(bid)
         return self.cfg.blocks[bid]
 
     def add_stmt(self, block: BasicBlock, stmt: ast.AST) -> None:
@@ -252,9 +252,9 @@ class CFGVisitor(ast.NodeVisitor):
         )
 
     def add_ClassCFG(self, node: ast.ClassDef):
-        class_body = ast.Module(body=node.body)
-        class_CFG = CFGVisitor().build(node.name, class_body)
-        self.cfg.classes[node.name] = class_CFG
+        class_body: ast.Module = ast.Module(body=node.body)
+        class_cfg: CFG = CFGVisitor().build(node.name, class_body)
+        self.cfg.classes[node.name] = class_cfg
 
     def add_condition(
             self, cond1: Optional[Type[ast.AST]], cond2: Optional[Type[ast.AST]]
@@ -367,9 +367,6 @@ class CFGVisitor(ast.NodeVisitor):
         )
 
     def generic_visit(self, node):
-        if type(node) in [ast.Import, ast.ImportFrom]:
-            self.add_stmt(self.curr_block, node)
-            return
         if type(node) in [ast.AsyncFunctionDef]:
             self.add_stmt(self.curr_block, node)
             self.add_subgraph(node)
@@ -396,7 +393,7 @@ class CFGVisitor(ast.NodeVisitor):
         if not self.curr_block.next:
             self.add_edge(self.curr_block.bid, to_bid)
 
-    def visit_Module(self, node: ast.Module):
+    def visit_Module(self, node: ast.Module) -> None:
         self.add_stmt(self.curr_block, node)
         new_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, new_block.bid)
@@ -404,9 +401,21 @@ class CFGVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef):
-        new_func_block: FuncBlock = self.new_func_block()
-        self.replace_block(new_func_block)
+    def visit_Import(self, node: ast.Import) -> None:
+        self.add_stmt(self.curr_block, node)
+        new_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, new_block.bid)
+        self.curr_block = new_block
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self.add_stmt(self.curr_block, node)
+        new_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, new_block.bid)
+        self.curr_block = new_block
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        new_func_block: FuncBlock = self.new_func_block(self.curr_block.bid)
+        self.curr_block = new_func_block
         self.add_stmt(self.curr_block, node)
         self.add_subgraph(node)
 
@@ -487,15 +496,15 @@ class CFGVisitor(ast.NodeVisitor):
             self.add_edge(self.curr_block.bid, next_block.bid)
             self.curr_block = next_block
 
-    #        self.generic_visit(node)
-
-    def visit_Call(self, node: ast.Call):
+    def visit_Call(self, node: ast.Call) -> None:
         if type(node.func) == ast.Lambda:
             self.lambdaReg = ("Anonymous Function", node.func)
             self.generic_visit(node)
         else:
+            call_block: CallBlock = self.new_call_block(self.curr_block.bid)
+            self.curr_block = call_block
             self.add_stmt(self.curr_block, node)
-            self.new_block()
+
             new_block = self.new_block()
             self.add_edge(self.curr_block.bid, new_block.bid)
             self.curr_block = new_block
@@ -507,72 +516,72 @@ class CFGVisitor(ast.NodeVisitor):
         self.add_edge(self.curr_block.bid, new_block.bid)
         self.curr_block = new_block
 
-    def visit_If(self, node: ast.If):
+    def visit_If(self, node: ast.If) -> None:
         # Add the If statement at the end of the current block.
         self.add_stmt(self.curr_block, node)
 
         # Create a block for the code after the if-else.
-        afterif_block: BasicBlock = self.new_block()
+        after_if_block: BasicBlock = self.new_block()
+
         # Create a new block for the body of the if.
-        # if_block = self.add_edge(self.curr_block.bid, self.new_block().bid, node.test)
-        if_block: BasicBlock = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        if_body_block: BasicBlock = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
         # New block for the body of the else if there is an else clause.
         if node.orelse:
             self.curr_block = self.add_edge(
-                # self.curr_block.bid, self.new_block().bid, self.invert(node.test)
                 self.curr_block.bid, self.new_block().bid
             )
 
             # Visit the children in the body of the else to populate the block.
-            self.populate_body(node.orelse, afterif_block.bid)
+            self.populate_body(node.orelse, after_if_block.bid)
         else:
             self.add_edge(
-                # self.curr_block.bid, afterif_block.bid, self.invert(node.test)
-                self.curr_block.bid, afterif_block.bid
+                self.curr_block.bid, after_if_block.bid
             )
         # Visit children to populate the if block.
-        self.curr_block: BasicBlock = if_block
-
-        self.populate_body(node.body, afterif_block.bid)
+        self.curr_block: BasicBlock = if_body_block
+        self.populate_body(node.body, after_if_block.bid)
 
         # Continue building the CFG in the after-if block.
-        self.curr_block: BasicBlock = afterif_block
+        self.curr_block: BasicBlock = after_if_block
 
-    def visit_For(self, node: ast.While):
+    def visit_For(self, node: ast.While) -> None:
         loop_guard = self.add_loop_block()
         self.curr_block = loop_guard
         self.add_stmt(self.curr_block, node)
         self.loop_guard_stack.append(loop_guard)
+
         # New block for the body of the for-loop.
-        for_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        for_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, for_block.bid)
+        after_for_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, after_for_block.bid)
+        self.loop_stack.append(after_for_block)
         if not node.orelse:
             # Block of code after the for loop.
-            afterfor_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-            self.loop_stack.append(afterfor_block)
-            self.curr_block = for_block
+            self.add_edge(self.curr_block.bid, after_for_block.bid)
 
+            # self.loop_stack.append(after_for_block)
+            self.curr_block = for_block
             self.populate_body(node.body, loop_guard.bid)
         else:
             # Block of code after the for loop.
-            afterfor_block = self.new_block()
+            or_else_block: BasicBlock = self.new_block()
             orelse_block = self.add_edge(
                 self.curr_block.bid,
-                self.new_block().bid
-                # ast.Name(id="else", ctx=ast.Load()),
+                or_else_block.bid
             )
-            self.loop_stack.append(afterfor_block)
-            self.curr_block = for_block
 
+            # self.loop_stack.append(after_for_block)
+            self.curr_block = for_block
             self.populate_body(node.body, loop_guard.bid)
 
             self.curr_block = orelse_block
-            # for child in node.orelse:
-            #     self.visit(child)
-            # self.add_edge(orelse_block.bid, afterfor_block.bid)
-            self.populate_body(node.orelse, afterfor_block.bid)
+            self.populate_body(node.orelse, after_for_block.bid)
+
         # Continue building the CFG in the after-for block.
-        self.curr_block = afterfor_block
+        self.curr_block = after_for_block
+        self.loop_stack.pop()
         self.loop_guard_stack.pop()
 
     # ignore the case when using set or dict comprehension or generator expression but the result is not assigned to a variable
@@ -589,66 +598,49 @@ class CFGVisitor(ast.NodeVisitor):
             self.add_stmt(self.curr_block, node)
         self.generic_visit(node)
 
-    def visit_While(self, node: ast.While):
+    def visit_While(self, node: ast.While) -> None:
         loop_guard: BasicBlock = self.add_loop_block()
         self.curr_block = loop_guard
         self.add_stmt(loop_guard, node)
         self.loop_guard_stack.append(loop_guard)
+
         # New block for the case where the test in the while is False.
-        afterwhile_block: BasicBlock = self.new_block()
-        self.loop_stack.append(afterwhile_block)
-        # inverted_test = self.invert(node.test)
+        after_while_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, after_while_block.bid)
+        self.loop_stack.append(after_while_block)
 
         if not node.orelse:
-            # Skip shortcut loop edge if while True:
-            # if not (
-            #         isinstance(inverted_test, ast.NameConstant)
-            #         and inverted_test.value == False
-            # ):
-            #     self.add_edge(self.curr_block.bid, afterwhile_block.bid, inverted_test)
-            self.add_edge(self.curr_block.bid, afterwhile_block.bid)
-            print(afterwhile_block.bid)
             # New block for the case where the test in the while is True.
             # Populate the while block.
-            self.curr_block = self.add_edge(
-                # self.curr_block.bid, self.new_block().bid, node.test
-                self.curr_block.bid, self.new_block().bid
-            )
+            while_body_block: BasicBlock = self.new_block()
+            self.add_edge(self.curr_block.bid, while_body_block.bid)
+            self.curr_block = while_body_block
 
             self.populate_body(node.body, loop_guard.bid)
         else:
-            orelse_block: BasicBlock = self.new_block()
-            # if not (
-            #         isinstance(inverted_test, ast.NameConstant)
-            #         and inverted_test.value == False
-            # ):
-            #     self.add_edge(self.curr_block.bid, orelse_block.bid, inverted_test)
-            self.add_edge(self.curr_block.bid, orelse_block.bid)
-            self.curr_block = self.add_edge(
-                # self.curr_block.bid, self.new_block().bid, node.test
-                self.curr_block.bid, self.new_block().bid
-            )
-
+            or_else_block: BasicBlock = self.new_block()
+            self.add_edge(self.curr_block.bid, or_else_block.bid)
+            while_body_block: BasicBlock = self.new_block()
+            self.add_edge(self.curr_block.bid, while_body_block.bid)
+            self.curr_block = while_body_block
             self.populate_body(node.body, loop_guard.bid)
-            self.curr_block = orelse_block
-            # for child in node.orelse:
-            #     self.visit(child)
-            # self.add_edge(orelse_block.bid, afterwhile_block.bid)
-            self.populate_body(node.orelse, afterwhile_block.bid)
+
+            self.curr_block = or_else_block
+            self.populate_body(node.orelse, after_while_block.bid)
 
         # Continue building the CFG in the after-while block.
-        self.curr_block = afterwhile_block
+        self.curr_block = after_while_block
         self.loop_stack.pop()
         self.loop_guard_stack.pop()
 
-    def visit_Break(self, node: ast.Break):
+    def visit_Break(self, node: ast.Break) -> None:
         assert len(self.loop_stack), "Found break not inside loop"
         self.add_stmt(self.curr_block, node)
         # self.add_edge(self.curr_block.bid, self.loop_stack[-1].bid, ast.Break())
         self.add_edge(self.curr_block.bid, self.loop_stack[-1].bid)
 
     # ToDO: final blocks to be add
-    def visit_Return(self, node: ast.Return):
+    def visit_Return(self, node: ast.Return) -> None:
         if type(node.value) == ast.IfExp:
             self.ifExp = True
             self.generic_visit(node)
@@ -660,7 +652,7 @@ class CFGVisitor(ast.NodeVisitor):
         # the return statement will not be included in the CFG.
         self.curr_block = self.new_block()
 
-    def visit_Pass(self, node: ast.Pass):
+    def visit_Pass(self, node: ast.Pass) -> None:
         self.add_stmt(self.curr_block, node)
         new_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, new_block.bid)
