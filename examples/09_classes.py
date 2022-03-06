@@ -8,13 +8,9 @@ class Employee:
         self.name = name
         self.salary = salary
         Employee.empCount += 1
-        # type(self).empCount += 1
 
     def displayCount(self):
-        print("Total Employee %d" % Employee.empCount)
-
-    def displayEmployee(self):
-        print("Name : ", self.name, ", Salary: ", self.salary)
+        return 1
 
     def __str__(self):
         return "Name : " + self.name + ", Salary: " + str(self.salary)
@@ -25,4 +21,3 @@ class Employee:
 
 
 emp2 = Employee("Jed", 5000)
-emp1.name
