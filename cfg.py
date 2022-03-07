@@ -948,7 +948,7 @@ class CFGVisitor(ast.NodeVisitor):
     # #     finally:
     # #         self.setCompReg = None
 
-    def visit_Try(self, node: ast.Try):
+    def visit_Try(self, node: ast.Try) -> None:
         loop_guard = self.add_loop_block()
         self.curr_block = loop_guard
         self.add_stmt(
@@ -1020,8 +1020,9 @@ if __name__ == "__main__":
     file.close()
 
     comments_cleaner = comments.CommentsCleaner(source)
-    comments_cleaner.remove_comments()
+    comments_cleaner.remove_comments_and_docstrings()
     comments_cleaner.format_code()
+    logging.debug(comments_cleaner.source)
 
     cfg = CFGVisitor().build(filename, ast.parse(comments_cleaner.source))
     logging.debug('flows: %s', sorted(cfg.flows))
