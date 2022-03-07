@@ -1,4 +1,5 @@
 from __future__ import annotations
+import comments
 import astor
 import astpretty
 import graphviz as gv
@@ -6,7 +7,7 @@ import os
 import ast
 import sys
 import logging
-from typing import Dict, List, Tuple, Set, Optional, Type, Any
+from typing import Dict, List, Tuple, Set, Optional, Type
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -123,7 +124,7 @@ class CFG:
         self.func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = {}
         self.class_cfgs: Dict[str, CFG] = {}
         self.blocks: Dict[int, BasicBlock] = {}
-        self.edges: Dict[Tuple[int, int], Type[ast.AST]] = {}
+        self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
 
         self.flows: Set[Tuple[int, int]] = set()
@@ -157,7 +158,7 @@ class CFG:
                     else "",
                 )
 
-    def _show(self, fmt: str = "png", calls: bool = True) -> gv.dot.Digraph:
+    def _show(self, fmt: str = "pdf", calls: bool = True) -> gv.dot.Digraph:
         # self.graph = gv.Digraph(name='cluster_'+self.name, format=fmt, graph_attr={'label': self.name})
         self.graph = gv.Digraph(name="cluster_" + self.name, format=fmt)
         self._traverse(self.start, calls=calls)
@@ -170,7 +171,7 @@ class CFG:
     def show(
             self,
             filepath: str = "../output",
-            fmt: str = "png",
+            fmt: str = "pdf",
             calls: bool = True,
             show: bool = True,
     ) -> None:
@@ -208,20 +209,21 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.start = self.curr_block
 
         self.visit(tree)
+        # self.remove_empty_blocks(self.cfg.start)
         self.remove_empty_blocks(self.cfg.start)
         return self.cfg
 
-    def replace_block(self, new_block: BasicBlock):
-        old_bid: int = self.curr_block.bid
-        for prev_bid in self.curr_block.prev:
-            block: Type[BasicBlock] = self.cfg.blocks[prev_bid]
-            block.remove_from_next(old_bid)
-            self.add_edge(prev_bid, new_block.bid)
-        for next_bid in self.curr_block.next:
-            block: Type[BasicBlock] = self.cfg.blocks[next_bid]
-            block.remove_from_prev(old_bid)
-            self.add_edge(new_block.bid, next_bid)
-        self.curr_block = new_block
+    # def replace_block(self, new_block: BasicBlock):
+    #     old_bid: int = self.curr_block.bid
+    #     for prev_bid in self.curr_block.prev:
+    #         block: Type[BasicBlock] = self.cfg.blocks[prev_bid]
+    #         block.remove_from_next(old_bid)
+    #         self.add_edge(prev_bid, new_block.bid)
+    #     for next_bid in self.curr_block.next:
+    #         block: Type[BasicBlock] = self.cfg.blocks[next_bid]
+    #         block.remove_from_prev(old_bid)
+    #         self.add_edge(new_block.bid, next_bid)
+    #     self.curr_block = new_block
 
     def new_block(self) -> BasicBlock:
         bid: int = BlockId.gen_block_id()
@@ -309,12 +311,16 @@ class CFGVisitor(ast.NodeVisitor):
                                 self.cfg.edges.get((block.bid, next_bid)),
                             ),
                         )
+                        self.cfg.flows.add((prev_bid, next_bid))
                         self.cfg.edges.pop((block.bid, next_bid), None)
                         next_block.remove_from_prev(block.bid)
-                        self.cfg.flows.remove((block.bid, next_block.bid))
+                        if (block.bid, next_block.bid) in self.cfg.flows:
+                            self.cfg.flows.remove((block.bid, next_block.bid))
                     self.cfg.edges.pop((prev_bid, block.bid), None)
                     prev_block.remove_from_next(block.bid)
-                    self.cfg.flows.remove((prev_block.bid, block.bid))
+                    if (prev_block.bid, block.bid) in self.cfg.flows:
+                        self.cfg.flows.remove((prev_block.bid, block.bid))
+
                 block.prev.clear()
                 for next_bid in block.next:
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
@@ -592,7 +598,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_stack.append(after_for_block)
         if not node.orelse:
             # Block of code after the for loop.
-            self.add_edge(self.curr_block.bid, after_for_block.bid)
+            # self.add_edge(self.curr_block.bid, after_for_block.bid)
 
             # self.loop_stack.append(after_for_block)
             self.curr_block = for_block
@@ -600,13 +606,13 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             # Block of code after the for loop.
             or_else_block: BasicBlock = self.new_block()
-            orelse_block = self.add_edge(self.curr_block.bid, or_else_block.bid)
+            self.add_edge(self.curr_block.bid, or_else_block.bid)
 
             # self.loop_stack.append(after_for_block)
             self.curr_block = for_block
             self.populate_body(node.body, loop_guard.bid)
 
-            self.curr_block = orelse_block
+            self.curr_block = or_else_block
             self.populate_body(node.orelse, after_for_block.bid)
 
         # Continue building the CFG in the after-for block.
@@ -1011,6 +1017,13 @@ if __name__ == "__main__":
     filename = sys.argv[1]
     file = open(filename, "r")
     source = file.read()
-    cfg = CFGVisitor().build(filename, ast.parse(source))
-    logging.debug('flows: %s', cfg.flows)
+    file.close()
+
+    comments_cleaner = comments.CommentsCleaner(source)
+    comments_cleaner.remove_comments()
+    comments_cleaner.format_code()
+
+    cfg = CFGVisitor().build(filename, ast.parse(comments_cleaner.source))
+    logging.debug('flows: %s', sorted(cfg.flows))
+    logging.debug('edges: %s', sorted(cfg.edges.keys()))
     cfg.show()

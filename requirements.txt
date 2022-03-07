@@ -1,3 +1,4 @@
 astor==0.8.1
 graphviz==0.19.1
 astpretty==2.1.0
+autopep8~=1.6.0
