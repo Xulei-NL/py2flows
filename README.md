@@ -23,3 +23,4 @@ A control flow generator for Python that is is able to generate control flow gra
 - [x] Import
 - [x] ImportFrom
 - [x] Module
+- [x] Remove comments and docstrings

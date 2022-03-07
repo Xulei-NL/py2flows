@@ -58,6 +58,7 @@ class CommentsCleaner:
             last_lineno = end_line
         self.source = out
 
+    ### https://stackoverflow.com/a/2962727/6403253:w
     def remove_comments_and_docstrings(self):
         """
         Returns 'source' minus comments and docstrings.

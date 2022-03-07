@@ -1,5 +1,6 @@
 from __future__ import annotations
 import comments
+import randoms
 import astor
 import astpretty
 import graphviz as gv
@@ -202,6 +203,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block: Optional[BasicBlock] = None
 
         self.loop_guard_stack: List[BasicBlock] = []
+        self.list_comp_stack: List[Tuple[str, ast.ListComp]] = []
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -470,7 +472,25 @@ class CFGVisitor(ast.NodeVisitor):
     # TODO: change all those registers to stacks!
     def visit_Assign(self, node: ast.Assign) -> None:
         # self.generic_visit(node)
-
+        if type(node.value) == ast.ListComp:
+            tmp_var: str = randoms.RandomVariableName.gen_random_name()
+            self.add_stmt(self.curr_block, ast.Assign(
+                # targets=[ast.Name(id=node.targets[0].id, ctx=ast.Store())],
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store)],
+                value=ast.List(elts=[], ctx=ast.Load())
+            ))
+            new_block: BasicBlock = self.new_block()
+            self.add_edge(self.curr_block.bid, new_block.bid)
+            self.curr_block = new_block
+            self.list_comp_stack.append((tmp_var, node.value))
+            self.visit(node.value)
+            self.add_stmt(self.curr_block,
+                          ast.Assign(targets=node.targets,
+                                     value=ast.Name(id=self.list_comp_stack[-1][0], ctx=ast.Load())))
+            self.list_comp_stack.pop()
+            new_block: BasicBlock = self.new_block()
+            self.add_edge(self.curr_block.bid, new_block.bid)
+            self.curr_block = new_block
         # if (
         #         type(node.value)
         #         in [ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Lambda]
@@ -529,11 +549,11 @@ class CFGVisitor(ast.NodeVisitor):
         #         self.genExpReg = (node.targets[0].id, node.value)
         #     else:
         #         self.lambdaReg = (node.targets[0].id, node.value)
-        # else:
-        self.add_stmt(self.curr_block, node)
-        next_block = self.new_block()
-        self.add_edge(self.curr_block.bid, next_block.bid)
-        self.curr_block = next_block
+        else:
+            self.add_stmt(self.curr_block, node)
+            next_block = self.new_block()
+            self.add_edge(self.curr_block.bid, next_block.bid)
+            self.curr_block = next_block
         # self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -590,6 +610,9 @@ class CFGVisitor(ast.NodeVisitor):
         self.add_stmt(self.curr_block, node)
         self.loop_guard_stack.append(loop_guard)
 
+        # self.visit(node.iter)
+        logging.debug('Current iter: %s', astor.to_source(node.iter))
+
         # New block for the body of the for-loop.
         for_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, for_block.bid)
@@ -621,7 +644,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_guard_stack.pop()
 
     # ignore the case when using set or dict comprehension or generator expression but the result is not assigned to a variable
-    def visit_Expr(self, node: ast.Expr):
+    def visit_Expr(self, node: ast.Expr) -> None:
         # if type(node.value) == ast.ListComp and type(node.value.elt) == ast.Call:
         #     self.listCompReg = (None, node.value)
         # elif type(node.value) == ast.Lambda:
@@ -838,62 +861,61 @@ class CFGVisitor(ast.NodeVisitor):
             module: ast.Module = ast.Module(body=self._visit_IfExp(node))
             self.generic_visit(module)
 
-    # def visit_Lambda(self, node):  # deprecated since there is autopep8
-    #     self.add_FuncCFG(
-    #         ast.FunctionDef(
-    #             name=self.lambdaReg[0],
-    #             args=node.args,
-    #             body=[ast.Return(value=node.body)],
-    #             decorator_list=[],
-    #             returns=None,
-    #         )
-    #     )
-    #     self.lambdaReg = None
+    def visit_Lambda(self, node):  # deprecated since there is autopep8
+        self.add_FuncCFG(
+            ast.FunctionDef(
+                name=self.lambdaReg[0],
+                args=node.args,
+                body=[ast.Return(value=node.body)],
+                decorator_list=[],
+                returns=None,
+            )
+        )
+        self.lambdaReg = None
 
-    # def _visit_ListComp(self, generators):
-    #     if not generators:
-    #         self.generic_visit(
-    #             self.listCompReg[1].elt
-    #         )  # the location of the node may be wrong
-    #         if self.listCompReg[0]:  # bug if there is else statement in comprehension
-    #             return [
-    #                 ast.Expr(
-    #                     value=ast.Call(
-    #                         func=ast.Attribute(
-    #                             value=ast.Name(id=self.listCompReg[0], ctx=ast.Load()),
-    #                             attr="append",
-    #                             ctx=ast.Load(),
-    #                         ),
-    #                         args=[self.listCompReg[1].elt],
-    #                         keywords=[],
-    #                     )
-    #                 )
-    #             ]
-    #         else:
-    #             return [ast.Expr(value=self.listCompReg[1].elt)]
-    #     else:
-    #         return [
-    #             ast.For(
-    #                 target=generators[-1].target,
-    #                 iter=generators[-1].iter,
-    #                 body=[
-    #                     ast.If(
-    #                         test=self.combine_conditions(generators[-1].ifs),
-    #                         body=self._visit_ListComp(generators[:-1]),
-    #                         orelse=[],
-    #                     )
-    #                 ]
-    #                 if generators[-1].ifs
-    #                 else self._visit_ListComp(generators[:-1]),
-    #                 orelse=[],
-    #             )
-    #         ]
-    #
-    # def visit_ListComp(self, node: ast.ListComp) -> None:
-    #     generated_for = self._visit_ListComp(node.generators)
-    #     # astpretty.pprint(generated_for)
-    #     self.generic_visit(ast.Module(generated_for))
-    #     self.listCompReg = None
+    def _visit_ListComp(self, generators):
+        if not generators:
+            self.generic_visit(self.list_comp_stack[-1][1].elt)  # the location of the node may be wrong
+            if self.list_comp_stack[-1][0]:  # bug if there is else statement in comprehension
+                return [
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id=self.list_comp_stack[-1][0], ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[self.list_comp_stack[-1][1].elt],
+                            keywords=[],
+                        )
+                    )
+                ]
+            else:
+                return [ast.Expr(value=self.list_comp_stack[-1][1].elt)]
+        else:
+            logging.debug(astor.to_source(ast.Module(generators)))
+            return [
+                ast.For(
+                    target=generators[0].target,
+                    iter=generators[0].iter,
+                    body=[
+                        ast.If(
+                            test=self.combine_conditions(generators[0].ifs),
+                            body=self._visit_ListComp(generators[1:]),
+                            orelse=[],
+                        )
+                    ]
+                    if generators[0].ifs
+                    else self._visit_ListComp(generators[1:]),
+                    orelse=[],
+                )
+            ]
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        generated_for = self._visit_ListComp(node.generators)
+        # astpretty.pprint(generated_for)
+        self.generic_visit(ast.Module(generated_for))
+        # self.list_comp_stack.pop()
 
     # def visit_Raise(self, node):
     #     self.add_stmt(self.curr_block, node)
