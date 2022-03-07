@@ -4,24 +4,22 @@ from typing import Any
 import astpretty
 import astor
 
-class Transformer(ast.NodeTransformer):
-    def visit_ListComp(self, node: ast.ListComp) -> Any:
-        # new_node = ast.For(
-        #     target=node.generators[0].target,
-        #     iter=node.generators[0].iter,
-        #     body=[],
-        #     orelse=None
-        # )
 
+class Transformer(ast.NodeTransformer):
+    def visit_Assign(self, node: ast.Assign) -> Any:
+        if type(node.value) == ast.ListComp:
+            self.visit(node.value)
+
+    def visit_ListComp(self, node: ast.ListComp) -> Any:
         new_expr = ast.Expr(
             value=ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id='a', ctx=ast.Load()),
-                    attr='append',
-                    ctx=ast.Load()
+                    value=ast.Name(id="a", ctx=ast.Load()),
+                    attr="append",
+                    ctx=ast.Load(),
                 ),
                 args=[node.elt],
-                keywords=[]
+                keywords=[],
             )
         )
 
@@ -31,17 +29,13 @@ class Transformer(ast.NodeTransformer):
             body = new_expr
         else:
             iff = ast.BoolOp(ast.And(), exprs)
-            body = ast.If(
-                test=iff,
-                body=[new_expr],
-                orelse=[]
-            )
+            body = ast.If(test=iff, body=[new_expr], orelse=[])
 
         inner_for: ast.For = ast.For(
             target=last_generator.target,
             iter=last_generator.iter,
             body=[body],
-            orelse=[]
+            orelse=[],
         )
         current_for = inner_for
         rest_generators = node.generators[:-1]
@@ -50,11 +44,11 @@ class Transformer(ast.NodeTransformer):
                 target=generator.target,
                 iter=generator.iter,
                 body=[inner_for],
-                orelse=[]
+                orelse=[],
             )
             inner_for = current_for
 
-        #self.generic_visit(inner_for)
+        # self.generic_visit(inner_for)
         return current_for
 
 
