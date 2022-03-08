@@ -9,9 +9,9 @@ A control flow generator for Python that is is able to generate control flow gra
 - [x] while statements
 - [x] for statements
 - [x] IfExp(partially)
-- [] list comprehensions
+- [x] list comprehensions(partially)
 - [] dict comprehensions
-- [] generator
+- [x] generator(partially)
 - [] lambda
 - [x] try(partially)
 - [x] break
@@ -23,3 +23,4 @@ A control flow generator for Python that is is able to generate control flow gra
 - [x] Import
 - [x] ImportFrom
 - [x] Module
+- [x] Remove comments and docstrings
