@@ -605,6 +605,23 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block: BasicBlock = after_if_block
 
     def visit_For(self, node: ast.For) -> None:
+
+        if type(node.iter) == ast.ListComp:
+            tmp_var: str = randoms.RandomVariableName.gen_random_name()
+            new_assign: ast.Assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=node.iter
+            )
+            new_for: ast.For = ast.For(
+                target=node.target,
+                iter=ast.Name(id=tmp_var, ctx=ast.Load()),
+                body=node.body,
+                orelse=node.orelse
+            )
+            print(astor.to_source(ast.Module(body=[new_assign, new_for])))
+            self.generic_visit(ast.Module(body=[new_assign, new_for]))
+            return
+
         loop_guard = self.add_loop_block()
         self.curr_block = loop_guard
         self.add_stmt(self.curr_block, node)
@@ -912,6 +929,7 @@ class CFGVisitor(ast.NodeVisitor):
             ]
 
     def visit_ListComp(self, node: ast.ListComp) -> None:
+
         generated_for = self._visit_ListComp(node.generators)
         # astpretty.pprint(generated_for)
         self.generic_visit(ast.Module(generated_for))
