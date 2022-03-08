@@ -684,12 +684,13 @@ class CFGVisitor(ast.NodeVisitor):
         # elif type(node.value == ast.Call):
         #     pass
         # else:
-        self.add_stmt(self.curr_block, node)
-        new_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, new_block.bid)
-        self.curr_block = new_block
+        # self.add_stmt(self.curr_block, node)
+        # new_block: BasicBlock = self.new_block()
+        # self.add_edge(self.curr_block.bid, new_block.bid)
+        # self.curr_block = new_block
 
-        # self.generic_visit(node)
+        # we don't care about the node: ast.Expr itself. We care about the content of node.value.
+        self.visit(node.value)
 
     def visit_While(self, node: ast.While) -> None:
         loop_guard: BasicBlock = self.add_loop_block()
@@ -823,7 +824,7 @@ class CFGVisitor(ast.NodeVisitor):
     # #     finally:
     # #         self.dictCompReg = None
     # #
-    def _visit_GeneratorExp(self, node: ast.GeneratorExp, generators):
+    def _visit_GeneratorExp(self, node: ast.GeneratorExp, generators: List[ast.comprehension]):
         if not generators:
             return [ast.Expr(value=ast.Yield(value=node.elt))]
         else:
@@ -882,17 +883,21 @@ class CFGVisitor(ast.NodeVisitor):
             module: ast.Module = ast.Module(body=self._visit_IfExp(node))
             self.generic_visit(module)
 
-    def visit_Lambda(self, node):  # deprecated since there is autopep8
-        self.add_FuncCFG(
-            ast.FunctionDef(
-                name=self.lambdaReg[0],
-                args=node.args,
-                body=[ast.Return(value=node.body)],
-                decorator_list=[],
-                returns=None,
-            )
-        )
-        self.lambdaReg = None
+    # Deprecated. since autopep8 will transform lambda expressions into functions automatically.
+    # I tested that if there was an expression such as lambda only, for example, lambda x: x, autopep8 wouldn't format it.
+    # But it makes sense since we can't refer to it later.
+    def visit_Lambda(self, node: ast.Lambda) -> None:  # deprecated since there is autopep8
+        logging.debug('Enter visit_Lambda')
+        # self.add_FuncCFG(
+        #     ast.FunctionDef(
+        #         name=self.lambdaReg[0],
+        #         args=node.args,
+        #         body=[ast.Return(value=node.body)],
+        #         decorator_list=[],
+        #         returns=None,
+        #     )
+        # )
+        # self.lambdaReg = None
 
     def _visit_ListComp(self, generators):
         if not generators:
@@ -1053,8 +1058,11 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             self.add_edge(after_try_block.bid, finally_block.bid)
 
-    # def visit_Yield(self, node):
-    #     self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+    def visit_Yield(self, node: ast.Yield) -> None:
+        self.add_stmt(self.curr_block, node)
+        new_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, new_block.bid)
+        self.curr_block = new_block
 
 
 if __name__ == "__main__":

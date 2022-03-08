@@ -4,23 +4,25 @@ A control flow generator for Python that is is able to generate control flow gra
 
 ## Supported language features
 
-- [x] basic assignments
-- [x] if statements
-- [x] while statements
-- [x] for statements
-- [x] IfExp(partially)
-- [x] list comprehensions(partially)
-- [] dict comprehensions
-- [x] generator(partially)
-- [] lambda
-- [x] try(partially)
-- [x] break
-- [x] continue
-- [x] pass
-- [x] return
-- [x] expr
-- [x] call(partially)
-- [x] Import
-- [x] ImportFrom
-- [x] Module
+- [x] ast.Assign(partially)
+- [x] ast.If
+- [x] ast.While
+- [x] ast.For
+- [x] ast.IfExp(partially)
+- [x] ast.ListComp(partially)
+- [] ast.SetComp
+- [] ast.DictComp
+- [x] ast.GeneratorExp(partially)
+- [x] ast.Lambda
+- [x] ast.Try(partially)
+- [x] ast.Break
+- [x] ast.Continue
+- [x] ast.Pass
+- [x] ast.Return
+- [x] ast.Expr
+- [x] ast.Call(partially)
+- [x] ast.Import
+- [x] ast.ImportFrom
+- [x] ast.Module
 - [x] Remove comments and docstrings
+- [x] ast.Yield
