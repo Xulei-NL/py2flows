@@ -1,12 +1,9 @@
 from __future__ import annotations
-import comments
-import randoms
+from py2flows.cfg import randoms
 import astor
-import astpretty
 import graphviz as gv
 import os
 import ast
-import sys
 import logging
 from typing import Dict, List, Tuple, Set, Optional, Type
 
@@ -677,9 +674,6 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             self.add_stmt(self.curr_block, node)
             self.cfg.final_blocks.append(self.curr_block)
-        # self.cfg.finalblocks.append(self.curr_block)
-        # Continue in a new block but without any jump to it -> all code after
-        # the return statement will not be included in the CFG.
         self.curr_block = self.new_block()
 
     def visit_Pass(self, node: ast.Pass) -> None:
@@ -945,19 +939,18 @@ class CFGVisitor(ast.NodeVisitor):
         self.add_edge(self.curr_block.bid, new_block.bid)
         self.curr_block = new_block
 
-
-if __name__ == "__main__":
-    filename = sys.argv[1]
-    file = open(filename, "r")
-    source = file.read()
-    file.close()
-
-    comments_cleaner = comments.CommentsCleaner(source)
-    comments_cleaner.remove_comments_and_docstrings()
-    comments_cleaner.format_code()
-    logging.debug(comments_cleaner.source)
-
-    cfg = CFGVisitor().build(filename, ast.parse(comments_cleaner.source))
-    logging.debug('flows: %s', sorted(cfg.flows))
-    logging.debug('edges: %s', sorted(cfg.edges.keys()))
-    cfg.show()
+# if __name__ == "__main__":
+#     filename = sys.argv[1]
+#     file = open(filename, "r")
+#     source = file.read()
+#     file.close()
+#
+#     comments_cleaner = comments.CommentsCleaner(source)
+#     comments_cleaner.remove_comments_and_docstrings()
+#     comments_cleaner.format_code()
+#     logging.debug(comments_cleaner.source)
+#
+#     cfg = CFGVisitor().build(filename, ast.parse(comments_cleaner.source))
+#     logging.debug('flows: %s', sorted(cfg.flows))
+#     logging.debug('edges: %s', sorted(cfg.edges.keys()))
+#     cfg.show()
