@@ -351,11 +351,15 @@ class CFGVisitor(ast.NodeVisitor):
         elif type(node) == ast.Lambda:
             return "lambda function"
 
-    def populate_body(self, body_list: List[Type[ast.AST]], to_bid: int) -> None:
+    def populate_body_to_next_bid(self, body_list, to_bid: int) -> None:
         for child in body_list:
             self.visit(child)
         if not self.curr_block.next:
             self.add_edge(self.curr_block.bid, to_bid)
+
+    def populate_body(self, body_list):
+        for child in body_list:
+            self.visit(child)
 
     def visit_Module(self, node: ast.Module) -> None:
         self.generic_visit(node)
@@ -385,9 +389,37 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        # self.generic_visit(node)
         node_value_type = type(node.value)
-        if node_value_type in [ast.ListComp, ast.SetComp, ast.DictComp]:
+        print(astor.to_source(node))
+        if node_value_type == ast.Call and any(type(arg) == ast.Call for arg in node.value.args):
+            arg_sequence = []
+            arg_name_sequence = []
+            for arg_expr in node.value.args:
+                if type(arg_expr) not in [ast.Name, ast.Num]:
+                    tmp_var: str = randoms.RandomVariableName.gen_random_name()
+                    assign1 = ast.Assign(
+                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                        value=arg_expr
+                    )
+                    arg_sequence.append(assign1)
+                    arg_name = ast.Name(
+                        id=tmp_var,
+                        ctx=ast.Load()
+                    )
+                    arg_name_sequence.append(arg_name)
+                else:
+                    arg_name_sequence.append(arg_expr)
+            assign2 = ast.Assign(
+                targets=node.targets,
+                value=ast.Call(
+                    func=node.value.func,
+                    args=arg_name_sequence,
+                    keywords=node.value.keywords
+                )
+            )
+            arg_sequence.append(assign2)
+            self.populate_body(arg_sequence)
+        elif node_value_type in [ast.ListComp, ast.SetComp, ast.DictComp]:
             tmp_var: str = randoms.RandomVariableName.gen_random_name()
             new_value = None
             if node_value_type == ast.ListComp:
@@ -441,14 +473,40 @@ class CFGVisitor(ast.NodeVisitor):
         # if type(node.func) == ast.Lambda:
         #     self.lambdaReg = ("Anonymous Function", node.func)
         #     self.generic_visit(node)
-        # else:
-        call_block: CallBlock = self.new_call_block(self.curr_block.bid)
-        self.curr_block = call_block
-        self.add_stmt(self.curr_block, node)
+        if any(type(arg) == ast.Call for arg in node.args):
+            arg_sequence = []
+            arg_name_sequence = []
+            for arg_expr in node.args:
+                if type(arg_expr) not in [ast.Name, ast.Num]:
+                    tmp_var: str = randoms.RandomVariableName.gen_random_name()
+                    assign1 = ast.Assign(
+                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                        value=arg_expr
+                    )
+                    arg_sequence.append(assign1)
+                    arg_name = ast.Name(
+                        id=tmp_var,
+                        ctx=ast.Load()
+                    )
+                    arg_name_sequence.append(arg_name)
+                else:
+                    arg_name_sequence.append(arg_expr)
+            call = ast.Call(
+                func=node.func,
+                args=arg_name_sequence,
+                keywords=node.keywords
+            )
+            arg_sequence.append(call)
+            self.populate_body(arg_sequence)
+        else:
+            # call_block: CallBlock = self.new_call_block(self.curr_block.bid)
+            call_block = self.curr_block
+            # self.curr_block = call_block
+            self.add_stmt(self.curr_block, node)
 
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
-        # self.curr_block.calls.append(self.get_function_name(node.func))
+            # self.curr_block.calls.append(self.get_function_name(node.func))
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.add_stmt(self.curr_block, node)
@@ -471,12 +529,12 @@ class CFGVisitor(ast.NodeVisitor):
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
             # Visit the children in the body of the else to populate the block.
-            self.populate_body(node.orelse, after_if_block.bid)
+            self.populate_body_to_next_bid(node.orelse, after_if_block.bid)
         else:
             self.add_edge(self.curr_block.bid, after_if_block.bid)
         # Visit children to populate the if block.
         self.curr_block: BasicBlock = if_body_block
-        self.populate_body(node.body, after_if_block.bid)
+        self.populate_body_to_next_bid(node.body, after_if_block.bid)
 
         # Continue building the CFG in the after-if block.
         self.curr_block: BasicBlock = after_if_block
@@ -518,7 +576,7 @@ class CFGVisitor(ast.NodeVisitor):
 
                 # self.loop_stack.append(after_for_block)
                 self.curr_block = for_block
-                self.populate_body(node.body, loop_guard.bid)
+                self.populate_body_to_next_bid(node.body, loop_guard.bid)
             else:
                 # Block of code after the for loop.
                 or_else_block: BasicBlock = self.new_block()
@@ -526,10 +584,10 @@ class CFGVisitor(ast.NodeVisitor):
 
                 # self.loop_stack.append(after_for_block)
                 self.curr_block = for_block
-                self.populate_body(node.body, loop_guard.bid)
+                self.populate_body_to_next_bid(node.body, loop_guard.bid)
 
                 self.curr_block = or_else_block
-                self.populate_body(node.orelse, after_for_block.bid)
+                self.populate_body_to_next_bid(node.orelse, after_for_block.bid)
 
             # Continue building the CFG in the after-for block.
             self.curr_block = after_for_block
@@ -541,36 +599,37 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Expr(self, node: ast.Expr) -> None:
 
         # we don't care about the node: ast.Expr itself. We care about the content of node.value.
-        if type(node.value) == ast.Call and any(type(arg) == ast.Call for arg in node.value.args):
-            new_expr_sequence = []
-            new_args = []
-
-            for arg in node.value.args:
-                if type(arg) == ast.Call:
-                    tmp_var: str = randoms.RandomVariableName.gen_random_name()
-                    new_assign: ast.Assign = ast.Assign(
-                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                        value=ast.Expr(value=arg)
-                    )
-                    new_expr_sequence.append(new_assign)
-                    new_args.append(ast.Name(id=tmp_var, ctx=ast.Load()))
-                else:
-                    new_args.append(arg)
-
-            new_expr: ast.Expr = ast.Expr(
-                value=ast.Call(
-                    args=new_args,
-                    func=node.value.func,
-                    keywords=node.value.keywords
-                )
-            )
-            new_expr_sequence.append(new_expr)
-            new_module: ast.Module = ast.Module(body=new_expr_sequence)
-            self.generic_visit(new_module)
-        else:
-            # self.visit(node.value)
-            self.add_stmt(self.curr_block, node)
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        # if type(node.value) == ast.Call and any(type(arg) == ast.Call for arg in node.value.args):
+        #     new_expr_sequence = []
+        #     new_args = []
+        #
+        #     for arg in node.value.args:
+        #         if type(arg) == ast.Call:
+        #             tmp_var: str = randoms.RandomVariableName.gen_random_name()
+        #             new_assign: ast.Assign = ast.Assign(
+        #                 targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+        #                 value=ast.Expr(value=arg)
+        #             )
+        #             new_expr_sequence.append(new_assign)
+        #             new_args.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+        #         else:
+        #             new_args.append(arg)
+        #
+        #     new_expr: ast.Expr = ast.Expr(
+        #         value=ast.Call(
+        #             args=new_args,
+        #             func=node.value.func,
+        #             keywords=node.value.keywords
+        #         )
+        #     )
+        #     new_expr_sequence.append(new_expr)
+        #     new_module: ast.Module = ast.Module(body=new_expr_sequence)
+        #     self.generic_visit(new_module)
+        # else:
+        # self.visit(node.value)
+        self.generic_visit(node)
+        # self.add_stmt(self.curr_block, node)
+        # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_While(self, node: ast.While) -> None:
         loop_guard: BasicBlock = self.add_loop_block()
@@ -590,15 +649,15 @@ class CFGVisitor(ast.NodeVisitor):
             self.add_edge(self.curr_block.bid, while_body_block.bid)
             self.curr_block = while_body_block
 
-            self.populate_body(node.body, loop_guard.bid)
+            self.populate_body_to_next_bid(node.body, loop_guard.bid)
         else:
             or_else_block: BasicBlock = self.new_block()
             self.add_edge(self.curr_block.bid, or_else_block.bid)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-            self.populate_body(node.body, loop_guard.bid)
+            self.populate_body_to_next_bid(node.body, loop_guard.bid)
 
             self.curr_block = or_else_block
-            self.populate_body(node.orelse, after_while_block.bid)
+            self.populate_body_to_next_bid(node.orelse, after_while_block.bid)
 
         # Continue building the CFG in the after-while block.
         self.curr_block = after_while_block
@@ -632,18 +691,10 @@ class CFGVisitor(ast.NodeVisitor):
         assert self.loop_guard_stack
         self.add_edge(self.curr_block.bid, self.loop_guard_stack[-1].bid)
 
-    # assert type check
-    # def visit_Assert(self, node):
-    #     self.add_stmt(self.curr_block, node)
-    #     # If the assertion fails, the current flow ends, so the fail block is a
-    #     # final block of the CFG.
-    #     # self.cfg.finalblocks.append(self.add_edge(self.curr_block.bid, self.new_block().bid, self.invert(node.test)))
-    #     # If the assertion is True, continue the flow of the program.
-    #     # success block
-    #     self.curr_block = self.add_edge(
-    #         self.curr_block.bid, self.new_block().bid, node.test
-    #     )
-    #     self.generic_visit(node)
+    def visit_Assert(self, node):
+        self.add_stmt(self.curr_block, node)
+        self.cfg.final_blocks.append(self.curr_block)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     # def visit_Await(self, node):
     #     afterawait_block = self.new_block()
@@ -836,7 +887,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         after_try_block = self.new_block()
         self.add_stmt(after_try_block, ast.Name(id="handle errors", ctx=ast.Load()))
-        self.populate_body(node.body, after_try_block.bid)
+        self.populate_body_to_next_bid(node.body, after_try_block.bid)
 
         self.curr_block = after_try_block
 
@@ -856,7 +907,7 @@ class CFGVisitor(ast.NodeVisitor):
                 self.add_stmt(
                     after_handler_block, ast.Name(id="end except", ctx=ast.Load())
                 )
-                self.populate_body(handler.body, after_handler_block.bid)
+                self.populate_body_to_next_bid(handler.body, after_handler_block.bid)
                 self.add_edge(after_handler_block.bid, after_try_block.bid)
 
         if node.orelse:
@@ -870,7 +921,7 @@ class CFGVisitor(ast.NodeVisitor):
 
             after_else_block = self.new_block()
             self.add_stmt(after_else_block, ast.Name(id="end no error", ctx=ast.Load()))
-            self.populate_body(node.orelse, after_else_block.bid)
+            self.populate_body_to_next_bid(node.orelse, after_else_block.bid)
             self.add_edge(after_else_block.bid, after_try_block.bid)
 
         finally_block = self.new_block()
@@ -883,7 +934,7 @@ class CFGVisitor(ast.NodeVisitor):
                 ast.Name(id="Finally", ctx=ast.Load()),
             )
             after_finally_block = self.new_block()
-            self.populate_body(node.finalbody, after_finally_block.bid)
+            self.populate_body_to_next_bid(node.finalbody, after_finally_block.bid)
             self.curr_block = after_finally_block
         else:
             self.add_edge(after_try_block.bid, finally_block.bid)
