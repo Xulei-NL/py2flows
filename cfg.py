@@ -207,6 +207,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.set_comp_stack: List[str] = []
         self.dict_comp_stack: List[str] = []
         self.gen_exp_stack = []
+        self.lambda_exp_stack = []
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -217,18 +218,6 @@ class CFGVisitor(ast.NodeVisitor):
         # self.remove_empty_blocks(self.cfg.start)
         self.remove_empty_blocks(self.cfg.start)
         return self.cfg
-
-    # def replace_block(self, new_block: BasicBlock):
-    #     old_bid: int = self.curr_block.bid
-    #     for prev_bid in self.curr_block.prev:
-    #         block: Type[BasicBlock] = self.cfg.blocks[prev_bid]
-    #         block.remove_from_next(old_bid)
-    #         self.add_edge(prev_bid, new_block.bid)
-    #     for next_bid in self.curr_block.next:
-    #         block: Type[BasicBlock] = self.cfg.blocks[next_bid]
-    #         block.remove_from_prev(old_bid)
-    #         self.add_edge(new_block.bid, next_bid)
-    #     self.curr_block = new_block
 
     def new_block(self) -> BasicBlock:
         bid: int = BlockId.gen_block_id()
@@ -334,69 +323,6 @@ class CFGVisitor(ast.NodeVisitor):
                 for next_bid in block.next:
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
 
-    # def invert(self, node: Type[ast.AST]) -> ast.AST:
-    #     if type(node) == ast.Compare:
-    #         if len(node.ops) == 1:
-    #             return ast.Compare(
-    #                 left=node.left,
-    #                 ops=[self.invertComparators[type(node.ops[0])]()],
-    #                 comparators=node.comparators,
-    #             )
-    #         else:
-    #             tmpNode = ast.BoolOp(
-    #                 op=ast.And(),
-    #                 values=[
-    #                     ast.Compare(
-    #                         left=node.left,
-    #                         ops=[node.ops[0]],
-    #                         comparators=[node.comparators[0]],
-    #                     )
-    #                 ],
-    #             )
-    #             for i in range(0, len(node.ops) - 1):
-    #                 tmpNode.values.append(
-    #                     ast.Compare(
-    #                         left=node.comparators[i],
-    #                         ops=[node.ops[i + 1]],
-    #                         comparators=[node.comparators[i + 1]],
-    #                     )
-    #                 )
-    #             return self.invert(tmpNode)
-    #     elif isinstance(node, ast.BinOp) and type(node.op) in self.invertComparators:
-    #         return ast.BinOp(
-    #             node.left, self.invertComparators[type(node.op)](), node.right
-    #         )
-    #     elif type(node) == ast.NameConstant and type(node.value) == bool:
-    #         return ast.NameConstant(value=not node.value)
-    #     elif type(node) == ast.BoolOp:
-    #         return ast.BoolOp(
-    #             values=[self.invert(x) for x in node.values],
-    #             op={ast.And: ast.Or(), ast.Or: ast.And()}.get(type(node.op)),
-    #         )
-    #     elif type(node) == ast.UnaryOp:
-    #         return self.UnaryopInvert(node)
-    #     else:
-    #         return ast.UnaryOp(op=ast.Not(), operand=node)
-
-    # def UnaryopInvert(self, node: Type[ast.AST]) -> Type[ast.AST]:
-    #     if type(node.op) == ast.UAdd:
-    #         return ast.UnaryOp(op=ast.USub(), operand=node.operand)
-    #     elif type(node.op) == ast.USub:
-    #         return ast.UnaryOp(op=ast.UAdd(), operand=node.operand)
-    #     elif type(node.op) == ast.Invert:
-    #         return ast.UnaryOp(op=ast.Not(), operand=node)
-    #     else:
-    #         return node.operand
-
-    # def boolinvert(self, node:Type[ast.AST]) -> Type[ast.AST]:
-    #     value = []
-    #     for item in node.values:
-    #         value.append(self.invert(item))
-    #     if type(node.op) == ast.Or:
-    #         return ast.BoolOp(values = value, op = ast.And())
-    #     elif type(node.op) == ast.And:
-    #         return ast.BoolOp(values = value, op = ast.Or())
-
     def combine_conditions(self, node_list: List[ast.expr]) -> ast.expr:
         return (
             node_list[0]
@@ -432,18 +358,11 @@ class CFGVisitor(ast.NodeVisitor):
             self.add_edge(self.curr_block.bid, to_bid)
 
     def visit_Module(self, node: ast.Module) -> None:
-        # self.add_stmt(self.curr_block, node)
-        # new_block: BasicBlock = self.new_block()
-        # self.add_edge(self.curr_block.bid, new_block.bid)
-        # self.curr_block = new_block
-
         self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
         self.add_stmt(self.curr_block, node)
-        new_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, new_block.bid)
-        self.curr_block = new_block
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         self.add_stmt(self.curr_block, node)
@@ -455,76 +374,56 @@ class CFGVisitor(ast.NodeVisitor):
         # new_func_block: FuncBlock = self.new_func_block(self.curr_block.bid)
         # self.curr_block = new_func_block
         self.add_stmt(self.curr_block, node)
-        logging.debug(self.curr_block.stmts_to_code())
-        logging.debug('Current FuncDef id: %d', self.curr_block.bid)
         self.add_FuncCFG(node)
 
-        next_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, next_block.bid)
-        self.curr_block = next_block
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.add_stmt(self.curr_block, node)
         self.add_ClassCFG(node)
 
-        next_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, next_block.bid)
-        self.curr_block = next_block
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         # self.generic_visit(node)
-        if type(node.value) == ast.ListComp:
+        node_value_type = type(node.value)
+        if node_value_type in [ast.ListComp, ast.SetComp, ast.DictComp]:
             tmp_var: str = randoms.RandomVariableName.gen_random_name()
+            new_value = None
+            if node_value_type == ast.ListComp:
+                new_value = ast.List(elts=[], ctx=ast.Load())
+                self.list_comp_stack.append(tmp_var)
+            elif node_value_type == ast.SetComp:
+                new_value = ast.Call(args=[], func=ast.Name(id='set', ctx=ast.Load()), keywords=[])
+                self.set_comp_stack.append(tmp_var)
+            elif node_value_type == ast.DictComp:
+                new_value = ast.Dict(keys=[], values=[])
+                self.dict_comp_stack.append(tmp_var)
             self.add_stmt(self.curr_block, ast.Assign(
-                # targets=[ast.Name(id=node.targets[0].id, ctx=ast.Store())],
                 targets=[ast.Name(id=tmp_var, ctx=ast.Store)],
-                value=ast.List(elts=[], ctx=ast.Load())
+                value=new_value
             ))
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-            self.list_comp_stack.append(tmp_var)
             self.visit(node.value)
+            old_name: str = None
+            if node_value_type == ast.ListComp:
+                old_name: str = self.list_comp_stack[-1]
+                self.list_comp_stack.pop()
+            elif node_value_type == ast.SetComp:
+                old_name: str = self.set_comp_stack[-1]
+                self.set_comp_stack.pop()
+            elif node_value_type == ast.DictComp:
+                old_name: str = self.dict_comp_stack[-1]
+                self.dict_comp_stack.pop()
             self.add_stmt(self.curr_block,
                           ast.Assign(targets=node.targets,
-                                     value=ast.Name(id=self.list_comp_stack[-1], ctx=ast.Load())))
-            self.list_comp_stack.pop()
+                                     value=ast.Name(id=old_name, ctx=ast.Load())))
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-        elif type(node.value) == ast.SetComp:
-            tmp_var: str = randoms.RandomVariableName.gen_random_name()
-            self.add_stmt(self.curr_block, ast.Assign(
-                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                value=ast.Call(
-                    args=[],
-                    func=ast.Name(id='set', ctx=ast.Load()),
-                    keywords=[]
-                )
-            ))
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-            self.set_comp_stack.append(tmp_var)
-            self.visit(node.value)
-            self.add_stmt(self.curr_block,
-                          ast.Assign(targets=node.targets,
-                                     value=ast.Name(id=self.set_comp_stack[-1], ctx=ast.Load())))
-            self.set_comp_stack.pop()
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-        elif type(node.value) == ast.DictComp:
-            tmp_var: str = randoms.RandomVariableName.gen_random_name()
-            self.add_stmt(self.curr_block, ast.Assign(
-                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                value=ast.Dict(keys=[], values=[])
-            ))
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-            self.dict_comp_stack.append(tmp_var)
-            self.visit(node.value)
-            self.add_stmt(self.curr_block,
-                          ast.Assign(targets=node.targets,
-                                     value=ast.Name(id=self.dict_comp_stack[-1], ctx=ast.Load())))
-            self.dict_comp_stack.pop()
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-
-        elif type(node.value) == ast.GeneratorExp:
+        elif node_value_type == ast.GeneratorExp:
             gen_name: str = randoms.RandomGeneratorName.gen_generator_name()
             self.gen_exp_stack.append(gen_name)
             self.visit(node.value)
+            self.gen_exp_stack.pop()
             new_assign: ast.Assign = ast.Assign(
                 targets=node.targets,
                 value=ast.Call(
@@ -534,70 +433,9 @@ class CFGVisitor(ast.NodeVisitor):
                 )
             )
             self.visit(new_assign)
-        # if (
-        #         type(node.value)
-        #         in [ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Lambda]
-        #         and len(node.targets) == 1
-        #         and type(node.targets[0]) == ast.Name
-        # ):  # is this entire statement necessary?
-        #     if type(node.value) == ast.ListComp:
-        #         self.add_stmt(
-        #             self.curr_block,
-        #             ast.Assign(
-        #                 targets=[ast.Name(id=node.targets[0].id, ctx=ast.Store())],
-        #                 value=ast.List(elts=[], ctx=ast.Load()),
-        #             ),
-        #         )
-        #         new_block: BasicBlock = self.new_block()
-        #         self.add_edge(self.curr_block.bid, new_block.bid)
-        #         self.curr_block = new_block
-        #         self.listCompReg = (node.targets[0].id, node.value)
-        #     elif type(node.value) == ast.SetComp:
-        #         self.add_stmt(
-        #             self.curr_block,
-        #             ast.Assign(
-        #                 targets=[ast.Name(id=node.targets[0].id, ctx=ast.Store())],
-        #                 value=ast.Call(
-        #                     func=ast.Name(id="set", ctx=ast.Load()),
-        #                     args=[],
-        #                     keywords=[],
-        #                 ),
-        #             ),
-        #         )
-        #         self.setCompReg = (node.targets[0].id, node.value)
-        #     elif type(node.value) == ast.DictComp:
-        #         self.add_stmt(
-        #             self.curr_block,
-        #             ast.Assign(
-        #                 targets=[ast.Name(id=node.targets[0].id, ctx=ast.Store())],
-        #                 value=ast.Dict(keys=[], values=[]),
-        #             ),
-        #         )
-        #         self.dictCompReg = (node.targets[0].id, node.value)
-        #     elif type(node.value) == ast.GeneratorExp:
-        #         self.add_stmt(
-        #             self.curr_block,
-        #             ast.Assign(
-        #                 targets=[ast.Name(id=node.targets[0].id, ctx=ast.Store())],
-        #                 value=ast.Call(
-        #                     func=ast.Name(
-        #                         id="__" + node.targets[0].id + "Generator__",
-        #                         ctx=ast.Load(),
-        #                     ),
-        #                     args=[],
-        #                     keywords=[],
-        #                 ),
-        #             ),
-        #         )
-        #         self.genExpReg = (node.targets[0].id, node.value)
-        #     else:
-        #         self.lambdaReg = (node.targets[0].id, node.value)
         else:
             self.add_stmt(self.curr_block, node)
-            next_block = self.new_block()
-            self.add_edge(self.curr_block.bid, next_block.bid)
-            self.curr_block = next_block
-        # self.generic_visit(node)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Call(self, node: ast.Call) -> None:
         # if type(node.func) == ast.Lambda:
@@ -608,16 +446,13 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = call_block
         self.add_stmt(self.curr_block, node)
 
-        new_block = self.new_block()
-        self.add_edge(self.curr_block.bid, new_block.bid)
-        self.curr_block = new_block
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
         # self.curr_block.calls.append(self.get_function_name(node.func))
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.add_stmt(self.curr_block, node)
-        new_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, new_block.bid)
-        self.curr_block = new_block
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_If(self, node: ast.If) -> None:
         # Add the If statement at the end of the current block.
@@ -701,7 +536,8 @@ class CFGVisitor(ast.NodeVisitor):
             self.loop_stack.pop()
             self.loop_guard_stack.pop()
 
-    # ignore the case when using set or dict comprehension or generator expression but the result is not assigned to a variable
+    # ignore the case when using set or dict comprehension or generator expression
+    # but the result is not assigned to a variable
     def visit_Expr(self, node: ast.Expr) -> None:
 
         # we don't care about the node: ast.Expr itself. We care about the content of node.value.
@@ -758,9 +594,7 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             or_else_block: BasicBlock = self.new_block()
             self.add_edge(self.curr_block.bid, or_else_block.bid)
-            while_body_block: BasicBlock = self.new_block()
-            self.add_edge(self.curr_block.bid, while_body_block.bid)
-            self.curr_block = while_body_block
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
             self.populate_body(node.body, loop_guard.bid)
 
             self.curr_block = or_else_block
@@ -774,10 +608,8 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Break(self, node: ast.Break) -> None:
         assert len(self.loop_stack), "Found break not inside loop"
         self.add_stmt(self.curr_block, node)
-        # self.add_edge(self.curr_block.bid, self.loop_stack[-1].bid, ast.Break())
         self.add_edge(self.curr_block.bid, self.loop_stack[-1].bid)
 
-    # ToDO: final blocks to be add
     def visit_Return(self, node: ast.Return) -> None:
         if type(node.value) == ast.IfExp:
             self.ifExp = True
@@ -793,9 +625,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Pass(self, node: ast.Pass) -> None:
         self.add_stmt(self.curr_block, node)
-        new_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, new_block.bid)
-        self.curr_block = new_block
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Continue(self, node: ast.Continue):
         self.add_stmt(self.curr_block, node)
@@ -889,15 +719,6 @@ class CFGVisitor(ast.NodeVisitor):
         )
         logging.debug(astor.to_source(generator_function))
         self.visit(generator_function)
-        # self.generic_visit(
-        #     ast.FunctionDef(
-        #         name="__" + self.genExpReg[0] + "Generator__",
-        #         args=ast.arguments(args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[], ),
-        #         body=self._visit_GeneratorExp(self.genExpReg[1].generators),
-        #         decorator_list=[],
-        #         returns=None,
-        #     )
-        # )
 
     def _visit_IfExp(self, node: ast.IfExp) -> List[ast.If]:
         return [
@@ -917,21 +738,9 @@ class CFGVisitor(ast.NodeVisitor):
             module: ast.Module = ast.Module(body=self._visit_IfExp(node))
             self.generic_visit(module)
 
-    # Deprecated. since autopep8 will transform lambda expressions into functions automatically.
-    # I tested that if there was an expression such as lambda only, for example, lambda x: x, autopep8 wouldn't format it.
-    # But it makes sense since we can't refer to it later.
-    def visit_Lambda(self, node: ast.Lambda) -> None:  # deprecated since there is autopep8
+    def visit_Lambda(self, node: ast.Lambda) -> None:
         logging.debug('Enter visit_Lambda')
-        # self.add_FuncCFG(
-        #     ast.FunctionDef(
-        #         name=self.lambdaReg[0],
-        #         args=node.args,
-        #         body=[ast.Return(value=node.body)],
-        #         decorator_list=[],
-        #         returns=None,
-        #     )
-        # )
-        # self.lambdaReg = None
+        self.add_FuncCFG()
 
     def _visit_ListComp(self, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:

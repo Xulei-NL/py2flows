@@ -7,3 +7,8 @@ lambda x: x + 1
 def test():
     c = lambda x: x + 1
     c(1)
+
+
+val = lambda: 1
+a = (lambda: 1)()
+(lambda: 1)()
