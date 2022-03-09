@@ -1,5 +1,5 @@
 from __future__ import annotations
-import randoms
+from py2flows.cfg import randoms
 import astor
 import graphviz as gv
 import os

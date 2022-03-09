@@ -3,8 +3,6 @@ import sys
 import ast
 import logging
 
-print(sys.path)
-
 
 def main():
     if len(sys.argv) == 1:
