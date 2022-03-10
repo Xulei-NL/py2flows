@@ -179,18 +179,6 @@ class CFG:
 
 
 class CFGVisitor(ast.NodeVisitor):
-    # invertComparators: Dict[Type[ast.AST], Type[ast.AST]] = {
-    #     ast.Eq: ast.NotEq,
-    #     ast.NotEq: ast.Eq,
-    #     ast.Lt: ast.GtE,
-    #     ast.LtE: ast.Gt,
-    #     ast.Gt: ast.LtE,
-    #     ast.GtE: ast.Lt,
-    #     ast.Is: ast.IsNot,
-    #     ast.IsNot: ast.Is,
-    #     ast.In: ast.NotIn,
-    #     ast.NotIn: ast.In,
-    # }
 
     def __init__(self):
         super().__init__()
@@ -212,7 +200,6 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.start = self.curr_block
 
         self.visit(tree)
-        # self.remove_empty_blocks(self.cfg.start)
         self.remove_empty_blocks(self.cfg.start)
         return self.cfg
 
@@ -283,40 +270,32 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             return cond1 if cond1 else cond2
 
-    # not tested
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
             visited.add(block.bid)
             if block.is_empty():
-                for prev_bid in block.prev:
+                for prev_bid in list(block.prev):
                     prev_block = self.cfg.blocks[prev_bid]
-                    for next_bid in block.next:
+                    for next_bid in list(block.next):
                         next_block = self.cfg.blocks[next_bid]
-                        self.add_edge(
-                            prev_bid,
-                            next_bid,
-                            self.add_condition(
-                                self.cfg.edges.get((prev_bid, block.bid)),
-                                self.cfg.edges.get((block.bid, next_bid)),
-                            ),
-                        )
-                        self.cfg.flows.add((prev_bid, next_bid))
+                        self.add_edge(prev_bid, next_bid)
+                        # self.cfg.flows.add((prev_bid, next_bid))
                         self.cfg.edges.pop((block.bid, next_bid), None)
                         next_block.remove_from_prev(block.bid)
-                        if (block.bid, next_block.bid) in self.cfg.flows:
-                            self.cfg.flows.remove((block.bid, next_block.bid))
+                        # if (block.bid, next_block.bid) in self.cfg.flows:
+                        #     self.cfg.flows.remove((block.bid, next_block.bid))
                     self.cfg.edges.pop((prev_bid, block.bid), None)
                     prev_block.remove_from_next(block.bid)
-                    if (prev_block.bid, block.bid) in self.cfg.flows:
-                        self.cfg.flows.remove((prev_block.bid, block.bid))
+                    # if (prev_block.bid, block.bid) in self.cfg.flows:
+                    #     self.cfg.flows.remove((prev_block.bid, block.bid))
 
                 block.prev.clear()
-                for next_bid in block.next:
+                for next_bid in list(block.next):
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
                 block.next.clear()
 
             else:
-                for next_bid in block.next:
+                for next_bid in list(block.next):
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
 
     def combine_conditions(self, node_list: List[ast.expr]) -> ast.expr:
@@ -347,15 +326,15 @@ class CFGVisitor(ast.NodeVisitor):
         elif type(node) == ast.Lambda:
             return "lambda function"
 
+    def populate_body(self, body_list):
+        for child in body_list:
+            self.visit(child)
+
     def populate_body_to_next_bid(self, body_list, to_bid: int) -> None:
         for child in body_list:
             self.visit(child)
         if not self.curr_block.next:
             self.add_edge(self.curr_block.bid, to_bid)
-
-    def populate_body(self, body_list):
-        for child in body_list:
-            self.visit(child)
 
     def visit_Module(self, node: ast.Module) -> None:
         self.generic_visit(node)
@@ -555,9 +534,6 @@ class CFGVisitor(ast.NodeVisitor):
             self.curr_block = loop_guard
             self.add_stmt(self.curr_block, node)
             self.loop_guard_stack.append(loop_guard)
-
-            # self.visit(node.iter)
-            logging.debug('Current iter: %s', astor.to_source(node.iter))
 
             # New block for the body of the for-loop.
             for_block: BasicBlock = self.new_block()
