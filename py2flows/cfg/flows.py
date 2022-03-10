@@ -1,5 +1,5 @@
 from __future__ import annotations
-from py2flows.cfg import randoms
+from . import randoms
 import astor
 import graphviz as gv
 import os
@@ -156,7 +156,7 @@ class CFG:
                     else "",
                 )
 
-    def _show(self, fmt: str = "pdf", calls: bool = True) -> gv.dot.Digraph:
+    def _show(self, fmt: str = "svg", calls: bool = True) -> gv.dot.Digraph:
         # self.graph = gv.Digraph(name='cluster_'+self.name, format=fmt, graph_attr={'label': self.name})
         self.graph = gv.Digraph(name="cluster_" + self.name, format=fmt)
         self._traverse(self.start, calls=calls)
@@ -169,7 +169,7 @@ class CFG:
     def show(
             self,
             filepath: str = "../output",
-            fmt: str = "pdf",
+            fmt: str = "svg",
             calls: bool = True,
             show: bool = True,
     ) -> None:
@@ -267,7 +267,6 @@ class CFGVisitor(ast.NodeVisitor):
             index += 1
 
         # tree.body.append(ast.Module(body=[]))
-        print(astor.to_source(tree))
         func_cfg: CFG = CFGVisitor().build(tree.name, ast.Module(body=tree.body))
         self.cfg.func_cfgs[tree.name] = (arg_list, func_cfg)
 
@@ -387,7 +386,6 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         node_value_type = type(node.value)
-        print(astor.to_source(node))
         if node_value_type == ast.Call and any(type(arg) == ast.Call for arg in node.value.args):
             arg_sequence = []
             arg_name_sequence = []
@@ -938,19 +936,3 @@ class CFGVisitor(ast.NodeVisitor):
         new_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, new_block.bid)
         self.curr_block = new_block
-
-# if __name__ == "__main__":
-#     filename = sys.argv[1]
-#     file = open(filename, "r")
-#     source = file.read()
-#     file.close()
-#
-#     comments_cleaner = comments.CommentsCleaner(source)
-#     comments_cleaner.remove_comments_and_docstrings()
-#     comments_cleaner.format_code()
-#     logging.debug(comments_cleaner.source)
-#
-#     cfg = CFGVisitor().build(filename, ast.parse(comments_cleaner.source))
-#     logging.debug('flows: %s', sorted(cfg.flows))
-#     logging.debug('edges: %s', sorted(cfg.edges.keys()))
-#     cfg.show()

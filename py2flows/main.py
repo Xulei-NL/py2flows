@@ -1,4 +1,4 @@
-from py2flows.cfg import comments, flows
+from .cfg import comments, flows
 import sys
 import ast
 import logging
