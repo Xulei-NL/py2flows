@@ -40,10 +40,10 @@ Support for other statements and expressions will be added gradually.
 
 ### Additional features
 
-- [x] Remove comments and docstrings
-- [x] Decompose complex statements into parts, such as SSA form.(partially)
-- [] Support modules and packages
-- [] Isolated entries and exits
+- [x] Removal of comments and docstrings
+- [x] Decomposition of complex statements
+- []  Modules and packages
+- [x] Isolated entries and exits
 
 ## How to use it
 
@@ -54,7 +54,7 @@ Support for other statements and expressions will be added gradually.
 3. If step 2 succeeds, an executable file *py2flows* will be available.
 4. `py2flows filename.py`
 
-### Example
+### Example 1
 
 ```python
 # 12_listcomp.py
@@ -64,3 +64,23 @@ b = [2 * x for y in z if len(y) > 1 for x in y if x > 2 if x < 4]
 ```
 
 ![Example](images/12_listcomp.svg)
+
+### Example 2
+
+```python
+def test():
+    while i <= n:
+        sum = sum + i
+        i = i + 1
+
+
+print("no isolated entries and exits")
+```
+
+> No isolated entries and exits
+
+![No isolated entries and exits](images/noiso.svg)
+
+> Isolated entries and exits
+
+![Isolated entries and exits](images/iso.svg)
