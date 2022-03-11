@@ -179,26 +179,15 @@ class CFG:
 
 
 class CFGVisitor(ast.NodeVisitor):
-    # invertComparators: Dict[Type[ast.AST], Type[ast.AST]] = {
-    #     ast.Eq: ast.NotEq,
-    #     ast.NotEq: ast.Eq,
-    #     ast.Lt: ast.GtE,
-    #     ast.LtE: ast.Gt,
-    #     ast.Gt: ast.LtE,
-    #     ast.GtE: ast.Lt,
-    #     ast.Is: ast.IsNot,
-    #     ast.IsNot: ast.Is,
-    #     ast.In: ast.NotIn,
-    #     ast.NotIn: ast.In,
-    # }
 
-    def __init__(self):
+    def __init__(self, isolation: int):
         super().__init__()
-        self.loop_stack: List[BasicBlock] = []
         self.ifExp = False
         self.cfg: Optional[CFG] = None
         self.curr_block: Optional[BasicBlock] = None
 
+        self.isolation = isolation
+        self.loop_stack: List[BasicBlock] = []
         self.loop_guard_stack: List[BasicBlock] = []
         self.list_comp_stack: List[str] = []
         self.set_comp_stack: List[str] = []
@@ -213,7 +202,8 @@ class CFGVisitor(ast.NodeVisitor):
 
         self.visit(tree)
         # self.remove_empty_blocks(self.cfg.start)
-        self.remove_empty_blocks(self.cfg.start)
+        logging.debug('Start id: %d', self.cfg.start.bid)
+        logging.debug('End id: %d', self.curr_block.bid)
         return self.cfg
 
     def new_block(self) -> BasicBlock:
@@ -266,13 +256,20 @@ class CFGVisitor(ast.NodeVisitor):
             arg_list.append((tmp_arg_list[index], default))
             index += 1
 
-        # tree.body.append(ast.Module(body=[]))
-        func_cfg: CFG = CFGVisitor().build(tree.name, ast.Module(body=tree.body))
+        visitor: CFGVisitor = CFGVisitor(self.isolation)
+        func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
+        if self.isolation:
+            if not func_cfg.final_blocks:
+                visitor.add_stmt(visitor.curr_block, ast.Pass())
+                func_cfg.final_blocks.append(visitor.curr_block)
+        visitor.remove_empty_blocks(func_cfg.start)
+        logging.debug([elt.__str__() for elt in func_cfg.final_blocks])
         self.cfg.func_cfgs[tree.name] = (arg_list, func_cfg)
 
     def add_ClassCFG(self, node: ast.ClassDef):
         class_body: ast.Module = ast.Module(body=node.body)
-        class_cfg: CFG = CFGVisitor().build(node.name, class_body)
+        visitor: CFGVisitor = CFGVisitor(self.isolation)
+        class_cfg: CFG = visitor.build(node.name, class_body)
         self.cfg.class_cfgs[node.name] = class_cfg
 
     def add_condition(
@@ -283,40 +280,32 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             return cond1 if cond1 else cond2
 
-    # not tested
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
             visited.add(block.bid)
             if block.is_empty():
-                for prev_bid in block.prev:
+                for prev_bid in list(block.prev):
                     prev_block = self.cfg.blocks[prev_bid]
-                    for next_bid in block.next:
+                    for next_bid in list(block.next):
                         next_block = self.cfg.blocks[next_bid]
-                        self.add_edge(
-                            prev_bid,
-                            next_bid,
-                            self.add_condition(
-                                self.cfg.edges.get((prev_bid, block.bid)),
-                                self.cfg.edges.get((block.bid, next_bid)),
-                            ),
-                        )
-                        self.cfg.flows.add((prev_bid, next_bid))
+                        self.add_edge(prev_bid, next_bid)
+                        # self.cfg.flows.add((prev_bid, next_bid))
                         self.cfg.edges.pop((block.bid, next_bid), None)
                         next_block.remove_from_prev(block.bid)
-                        if (block.bid, next_block.bid) in self.cfg.flows:
-                            self.cfg.flows.remove((block.bid, next_block.bid))
+                        # if (block.bid, next_block.bid) in self.cfg.flows:
+                        #     self.cfg.flows.remove((block.bid, next_block.bid))
                     self.cfg.edges.pop((prev_bid, block.bid), None)
                     prev_block.remove_from_next(block.bid)
-                    if (prev_block.bid, block.bid) in self.cfg.flows:
-                        self.cfg.flows.remove((prev_block.bid, block.bid))
+                    # if (prev_block.bid, block.bid) in self.cfg.flows:
+                    #     self.cfg.flows.remove((prev_block.bid, block.bid))
 
                 block.prev.clear()
-                for next_bid in block.next:
+                for next_bid in list(block.next):
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
                 block.next.clear()
 
             else:
-                for next_bid in block.next:
+                for next_bid in list(block.next):
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
 
     def combine_conditions(self, node_list: List[ast.expr]) -> ast.expr:
@@ -347,17 +336,20 @@ class CFGVisitor(ast.NodeVisitor):
         elif type(node) == ast.Lambda:
             return "lambda function"
 
+    def populate_body(self, body_list):
+        for child in body_list:
+            self.visit(child)
+
     def populate_body_to_next_bid(self, body_list, to_bid: int) -> None:
         for child in body_list:
             self.visit(child)
         if not self.curr_block.next:
             self.add_edge(self.curr_block.bid, to_bid)
 
-    def populate_body(self, body_list):
-        for child in body_list:
-            self.visit(child)
-
     def visit_Module(self, node: ast.Module) -> None:
+        if self.isolation:
+            self.add_stmt(self.curr_block, ast.Pass())
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -548,16 +540,13 @@ class CFGVisitor(ast.NodeVisitor):
                 body=node.body,
                 orelse=node.orelse
             )
-            self.generic_visit(ast.Module(body=[new_assign, new_for]))
+            self.populate_body([new_assign, new_for])
             return
         else:
             loop_guard = self.add_loop_block()
             self.curr_block = loop_guard
             self.add_stmt(self.curr_block, node)
             self.loop_guard_stack.append(loop_guard)
-
-            # self.visit(node.iter)
-            logging.debug('Current iter: %s', astor.to_source(node.iter))
 
             # New block for the body of the for-loop.
             for_block: BasicBlock = self.new_block()
@@ -729,7 +718,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_DictComp(self, node: ast.DictComp) -> None:
         generated_for = self._visit_DictComp(node.key, node.value, node.generators)
-        self.generic_visit(ast.Module(generated_for))
+        self.populate_body(generated_for)
 
     def _visit_GeneratorExp(self, node: ast.GeneratorExp, generators: List[ast.comprehension]):
         if not generators:
@@ -778,12 +767,12 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_IfExp(self, node: ast.IfExp) -> None:
         if self.ifExp:
-            module: ast.Module = ast.Module(body=self._visit_IfExp(node))
-            self.generic_visit(module)
+            body_list = self._visit_IfExp(node)
+            self.populate_body(body_list)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         logging.debug('Enter visit_Lambda')
-        self.add_FuncCFG()
+        # self.add_FuncCFG()
 
     def _visit_ListComp(self, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:
@@ -824,7 +813,7 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_ListComp(self, node: ast.ListComp) -> None:
 
         generated_for = self._visit_ListComp(node.elt, node.generators)
-        self.generic_visit(ast.Module(generated_for))
+        self.populate_body(generated_for)
 
     # def visit_Raise(self, node):
     #     self.add_stmt(self.curr_block, node)
@@ -868,7 +857,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_SetComp(self, node: ast.SetComp) -> None:
         generated_for = self._visit_SetComp(node.elt, node.generators)
-        self.generic_visit(ast.Module(body=generated_for))
+        self.populate_body(generated_for)
 
     def visit_Try(self, node: ast.Try) -> None:
         loop_guard = self.add_loop_block()
