@@ -3,7 +3,7 @@
 A control flow generator for Python that is able to generate control flow graphs and flows. The motivation behind this
 project is to generate flows suitable for data flow analysis for Python.
 
-## Supported language features
+## Supported language versions
 
 ### Python version
 
@@ -12,29 +12,52 @@ project is to generate flows suitable for data flow analysis for Python.
 - [] Python 3.9(Untested)
 - [] Python 3.10(Untested)
 
-### Abstract Syntax Tree
+## Abstract Syntax Tree
 
+### Modules
+
+- [x] ast.Module
+
+### Statements
+
+- [x] ast.FunctionDef
+- [] ast.AsyncFunctionDef
+- [x] ast.ClassDef
+- [x] ast.Return
+- [] ast.Delete
 - [x] ast.Assign
-- [x] ast.If
-- [x] ast.While
+- [x] ast.AugAssign
+- [x] ast.AnnAssign
 - [x] ast.For
+- [] ast.AsyncFor
+- [x] ast.While
+- [x] ast.If
+- [] ast.With
+- [] ast.AsyncWith
+- [] ast.Raise
+- [x] ast.Try
+- [x] ast.Assert
+- [x] ast.Import
+- [x] ast.ImportFrom
+- [] ast.Global
+- [] ast.Nonlocal
+- [x] ast.Expr
+- [x] ast.Pass
+- [x] ast.Break
+- [x] ast.Continue
+
+### Expressions
+
+- [x] ast.Lambda
 - [x] ast.IfExp
 - [x] ast.ListComp
 - [x] ast.SetComp
 - [x] ast.DictComp
 - [x] ast.GeneratorExp
-- [x] ast.Lambda
-- [x] ast.Try
-- [x] ast.Break
-- [x] ast.Continue
-- [x] ast.Pass
-- [x] ast.Return
-- [x] ast.Expr
-- [x] ast.Call
-- [x] ast.Import
-- [x] ast.ImportFrom
-- [x] ast.Module
 - [x] ast.Yield
+- [x] ast.Call
+- [x] ast.Attribute
+- [x] ast.Name
 
 Support for other statements and expressions will be added gradually.
 
@@ -52,7 +75,7 @@ Support for other statements and expressions will be added gradually.
 1. Install all dependencies listed in requirements.
 2. Open a terminal and run `python setup.py install`
 3. If step 2 succeeds, an executable file *py2flows* will be available.
-4. `py2flows filename.py`
+4. `py2flows --help`
 
 ### Example 1
 
