@@ -316,12 +316,11 @@ class CFGVisitor(ast.NodeVisitor):
         )
 
     def generic_visit(self, node):
+        logging.debug(type(node))
         if type(node) in [ast.AsyncFunctionDef]:
             self.add_stmt(self.curr_block, node)
             self.add_FuncCFG(node)
             return
-        if type(node) in [ast.AnnAssign]:
-            self.add_stmt(self.curr_block, node)
         super().generic_visit(node)
 
     def get_function_name(self, node: Type[ast.AST]) -> str:
@@ -378,6 +377,12 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         ret = self.visit(node.value)
+        logging.debug(ret)
+        if ret is not None and len(ret) == 1:
+            self.add_stmt(self.curr_block, node)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            return
+
         node_value_type = type(node.value)
         if node_value_type == ast.Call:
             tmp_assign = ast.Assign(
@@ -444,6 +449,10 @@ class CFGVisitor(ast.NodeVisitor):
             )
             new_sequence = ret[0:-1] + [new_assign]
             self.populate_body(new_sequence)
+        elif node_value_type == ast.Attribute:
+            node.value = ret[-1]
+            new_sequence = ret[0:-1] + [node]
+            self.populate_body(new_sequence)
         elif node_value_type == ast.Call and not all(type(arg) == ast.Name for arg in node.value.args):
             arg_sequence = []
             arg_name_sequence = []
@@ -472,6 +481,20 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             self.add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.add_stmt(self.curr_block, node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value:
+            new_assign: ast.Assign = ast.Assign(
+                targets=[node.target],
+                value=node.value
+            )
+            self.visit(new_assign)
+        else:
+            logging.debug('AnnAssign without value. Just ignore it')
 
     def visit_Call(self, node: ast.Call) -> Any:
         if type(node.func) == ast.Lambda:
@@ -516,10 +539,6 @@ class CFGVisitor(ast.NodeVisitor):
             return [node]
             # self.add_stmt(self.curr_block, node)
             # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-
-    def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        self.add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_If(self, node: ast.If) -> None:
         # Add the If statement at the end of the current block.
@@ -600,39 +619,8 @@ class CFGVisitor(ast.NodeVisitor):
             self.loop_stack.pop()
             self.loop_guard_stack.pop()
 
-    # ignore the case when using set or dict comprehension or generator expression
-    # but the result is not assigned to a variable
     def visit_Expr(self, node: ast.Expr) -> None:
 
-        # we don't care about the node: ast.Expr itself. We care about the content of node.value.
-        # if type(node.value) == ast.Call and any(type(arg) == ast.Call for arg in node.value.args):
-        #     new_expr_sequence = []
-        #     new_args = []
-        #
-        #     for arg in node.value.args:
-        #         if type(arg) == ast.Call:
-        #             tmp_var: str = randoms.RandomVariableName.gen_random_name()
-        #             new_assign: ast.Assign = ast.Assign(
-        #                 targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-        #                 value=ast.Expr(value=arg)
-        #             )
-        #             new_expr_sequence.append(new_assign)
-        #             new_args.append(ast.Name(id=tmp_var, ctx=ast.Load()))
-        #         else:
-        #             new_args.append(arg)
-        #
-        #     new_expr: ast.Expr = ast.Expr(
-        #         value=ast.Call(
-        #             args=new_args,
-        #             func=node.value.func,
-        #             keywords=node.value.keywords
-        #         )
-        #     )
-        #     new_expr_sequence.append(new_expr)
-        #     new_module: ast.Module = ast.Module(body=new_expr_sequence)
-        #     self.generic_visit(new_module)
-        # else:
-        # self.visit(node.value)
         tmp_var = randoms.RandomVariableName.gen_random_name()
         new_assign: ast.Assign = ast.Assign(
             targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
@@ -962,3 +950,29 @@ class CFGVisitor(ast.NodeVisitor):
         new_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, new_block.bid)
         self.curr_block = new_block
+
+    ################################################################
+    ################################################################
+    # expr
+    ################################################################
+    ################################################################
+
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
+        if type(node.value) == ast.Name:
+            return [node]
+        else:
+            ret = self.visit(node.value)
+            tmp_var: str = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=ret[-1]
+            )
+            new_attribute = ast.Attribute(
+                attr=node.attr,
+                ctx=node.ctx,
+                value=ast.Name(id=tmp_var, ctx=ast.Load())
+            )
+            return ret[0:-1] + [new_assign, new_attribute]
+
+    def visit_Name(self, node: ast.Name) -> ast.Name:
+        return node
