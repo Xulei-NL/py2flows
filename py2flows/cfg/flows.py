@@ -5,7 +5,7 @@ import graphviz as gv
 import os
 import ast
 import logging
-from typing import Dict, List, Tuple, Set, Optional, Type
+from typing import Dict, List, Tuple, Set, Optional, Type, Any
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -377,35 +377,19 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
+        ret = self.visit(node.value)
         node_value_type = type(node.value)
-        if node_value_type == ast.Call and any(type(arg) == ast.Call for arg in node.value.args):
-            arg_sequence = []
-            arg_name_sequence = []
-            for arg_expr in node.value.args:
-                if type(arg_expr) not in [ast.Name, ast.Num]:
-                    tmp_var: str = randoms.RandomVariableName.gen_random_name()
-                    assign1 = ast.Assign(
-                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                        value=arg_expr
-                    )
-                    arg_sequence.append(assign1)
-                    arg_name = ast.Name(
-                        id=tmp_var,
-                        ctx=ast.Load()
-                    )
-                    arg_name_sequence.append(arg_name)
-                else:
-                    arg_name_sequence.append(arg_expr)
-            assign2 = ast.Assign(
+        if node_value_type == ast.Call:
+            tmp_assign = ast.Assign(
                 targets=node.targets,
-                value=ast.Call(
-                    func=node.value.func,
-                    args=arg_name_sequence,
-                    keywords=node.value.keywords
-                )
+                value=ret[-1]
             )
-            arg_sequence.append(assign2)
-            self.populate_body(arg_sequence)
+            new_sequence = ret[0:-1] + [tmp_assign]
+            if len(new_sequence) == 1:
+                self.add_stmt(self.curr_block, new_sequence[-1])
+                self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            else:
+                self.populate_body(new_sequence)
         elif node_value_type in [ast.ListComp, ast.SetComp, ast.DictComp]:
             tmp_var: str = randoms.RandomVariableName.gen_random_name()
             new_value = None
@@ -419,7 +403,7 @@ class CFGVisitor(ast.NodeVisitor):
                 new_value = ast.Dict(keys=[], values=[])
                 self.dict_comp_stack.append(tmp_var)
             self.add_stmt(self.curr_block, ast.Assign(
-                targets=[ast.Name(id=tmp_var, ctx=ast.Store)],
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
                 value=new_value
             ))
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
@@ -452,48 +436,86 @@ class CFGVisitor(ast.NodeVisitor):
                 )
             )
             self.visit(new_assign)
+        elif node_value_type == ast.Lambda:
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_assign: ast.Assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=ret[-1]
+            )
+            new_sequence = ret[0:-1] + [new_assign]
+            self.populate_body(new_sequence)
+        elif node_value_type == ast.Call and not all(type(arg) == ast.Name for arg in node.value.args):
+            arg_sequence = []
+            arg_name_sequence = []
+            for arg_expr in node.value.args:
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                assign = ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=arg_expr
+                )
+                arg_sequence.append(assign)
+                arg_name = ast.Name(
+                    id=tmp_var,
+                    ctx=ast.Load()
+                )
+                arg_name_sequence.append(arg_name)
+            assign = ast.Assign(
+                targets=node.targets,
+                value=ast.Call(
+                    func=node.value.func,
+                    args=arg_name_sequence,
+                    keywords=node.value.keywords
+                )
+            )
+            arg_sequence.append(assign)
+            self.populate_body(arg_sequence)
         else:
             self.add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
-    def visit_Call(self, node: ast.Call) -> None:
-        # if type(node.func) == ast.Lambda:
-        #     self.lambdaReg = ("Anonymous Function", node.func)
-        #     self.generic_visit(node)
-        if any(type(arg) == ast.Call for arg in node.args):
+    def visit_Call(self, node: ast.Call) -> Any:
+        if type(node.func) == ast.Lambda:
+            tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
+            tmp_function_def = ast.FunctionDef(
+                name=tmp_lambda_name,
+                args=node.func.args,
+                body=[ast.Return(value=node.func.body)],
+                decorator_list=[],
+                returns=None
+            )
+            call = ast.Call(
+                args=node.args,
+                func=ast.Name(id=tmp_lambda_name, ctx=ast.Load()),
+                keywords=[]
+            )
+            new_sequence = [tmp_function_def, call]
+            return new_sequence
+        elif not all(type(arg) == ast.Name for arg in node.args):
             arg_sequence = []
             arg_name_sequence = []
             for arg_expr in node.args:
-                if type(arg_expr) not in [ast.Name, ast.Num]:
-                    tmp_var: str = randoms.RandomVariableName.gen_random_name()
-                    assign1 = ast.Assign(
-                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                        value=arg_expr
-                    )
-                    arg_sequence.append(assign1)
-                    arg_name = ast.Name(
-                        id=tmp_var,
-                        ctx=ast.Load()
-                    )
-                    arg_name_sequence.append(arg_name)
-                else:
-                    arg_name_sequence.append(arg_expr)
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                assign = ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=arg_expr
+                )
+                arg_sequence.append(assign)
+                arg_name = ast.Name(
+                    id=tmp_var,
+                    ctx=ast.Load()
+                )
+                arg_name_sequence.append(arg_name)
             call = ast.Call(
                 func=node.func,
                 args=arg_name_sequence,
                 keywords=node.keywords
             )
             arg_sequence.append(call)
-            self.populate_body(arg_sequence)
+            return arg_sequence
         else:
-            # call_block: CallBlock = self.new_call_block(self.curr_block.bid)
-            call_block = self.curr_block
-            # self.curr_block = call_block
-            self.add_stmt(self.curr_block, node)
-
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-
-            # self.curr_block.calls.append(self.get_function_name(node.func))
+            return [node]
+            # self.add_stmt(self.curr_block, node)
+            # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.add_stmt(self.curr_block, node)
@@ -611,9 +633,12 @@ class CFGVisitor(ast.NodeVisitor):
         #     self.generic_visit(new_module)
         # else:
         # self.visit(node.value)
-        self.generic_visit(node)
-        # self.add_stmt(self.curr_block, node)
-        # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        tmp_var = randoms.RandomVariableName.gen_random_name()
+        new_assign: ast.Assign = ast.Assign(
+            targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+            value=node.value
+        )
+        self.visit(new_assign)
 
     def visit_While(self, node: ast.While) -> None:
         loop_guard: BasicBlock = self.add_loop_block()
@@ -770,9 +795,21 @@ class CFGVisitor(ast.NodeVisitor):
             body_list = self._visit_IfExp(node)
             self.populate_body(body_list)
 
-    def visit_Lambda(self, node: ast.Lambda) -> None:
+    def visit_Lambda(self, node: ast.Lambda) -> Any:
         logging.debug('Enter visit_Lambda')
-        # self.add_FuncCFG()
+        tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
+        new_function_def: ast.FunctionDef = ast.FunctionDef(
+            name=tmp_lambda_name,
+            args=node.args,
+            body=[ast.Return(node.body)],
+            decorator_list=[],
+            returns=None
+        )
+        new_function_name: ast.Name = ast.Name(
+            id=tmp_lambda_name,
+            ctx=ast.Load()
+        )
+        return [new_function_def, new_function_name]
 
     def _visit_ListComp(self, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:
