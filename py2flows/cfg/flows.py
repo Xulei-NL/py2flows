@@ -6,6 +6,7 @@ import os
 import ast
 import logging
 from typing import Dict, List, Tuple, Set, Optional, Type, Any
+from collections import deque
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -377,7 +378,10 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         ret = self.visit(node.value)
-        logging.debug(ret)
+        source = ''
+        for expr in ret:
+            source += astor.to_source(expr)
+        logging.debug('Decomposed: ' + source)
         if ret is not None and len(ret) == 1:
             self.add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
@@ -496,50 +500,6 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             logging.debug('AnnAssign without value. Just ignore it')
 
-    def visit_Call(self, node: ast.Call) -> Any:
-        if type(node.func) == ast.Lambda:
-            tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
-            tmp_function_def = ast.FunctionDef(
-                name=tmp_lambda_name,
-                args=node.func.args,
-                body=[ast.Return(value=node.func.body)],
-                decorator_list=[],
-                returns=None
-            )
-            call = ast.Call(
-                args=node.args,
-                func=ast.Name(id=tmp_lambda_name, ctx=ast.Load()),
-                keywords=[]
-            )
-            new_sequence = [tmp_function_def, call]
-            return new_sequence
-        elif not all(type(arg) == ast.Name for arg in node.args):
-            arg_sequence = []
-            arg_name_sequence = []
-            for arg_expr in node.args:
-                tmp_var = randoms.RandomVariableName.gen_random_name()
-                assign = ast.Assign(
-                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                    value=arg_expr
-                )
-                arg_sequence.append(assign)
-                arg_name = ast.Name(
-                    id=tmp_var,
-                    ctx=ast.Load()
-                )
-                arg_name_sequence.append(arg_name)
-            call = ast.Call(
-                func=node.func,
-                args=arg_name_sequence,
-                keywords=node.keywords
-            )
-            arg_sequence.append(call)
-            return arg_sequence
-        else:
-            return [node]
-            # self.add_stmt(self.curr_block, node)
-            # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-
     def visit_If(self, node: ast.If) -> None:
         # Add the If statement at the end of the current block.
         self.add_stmt(self.curr_block, node)
@@ -621,7 +581,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> None:
 
-        tmp_var = randoms.RandomVariableName.gen_random_name()
+        tmp_var = randoms.RandomUnusedName.gen_unused_name()
         new_assign: ast.Assign = ast.Assign(
             targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
             value=node.value
@@ -729,10 +689,6 @@ class CFGVisitor(ast.NodeVisitor):
                 )
             ]
 
-    def visit_DictComp(self, node: ast.DictComp) -> None:
-        generated_for = self._visit_DictComp(node.key, node.value, node.generators)
-        self.populate_body(generated_for)
-
     def _visit_GeneratorExp(self, node: ast.GeneratorExp, generators: List[ast.comprehension]):
         if not generators:
             return [ast.Expr(value=ast.Yield(value=node.elt))]
@@ -753,51 +709,6 @@ class CFGVisitor(ast.NodeVisitor):
                     orelse=[],
                 )
             ]
-
-    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
-        generator_function: ast.FunctionDef = ast.FunctionDef(
-            name=self.gen_exp_stack[-1],
-            args=ast.arguments(args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
-            body=self._visit_GeneratorExp(node, node.generators),
-            decorator_list=[],
-            returns=None
-        )
-        logging.debug(astor.to_source(generator_function))
-        self.visit(generator_function)
-
-    def _visit_IfExp(self, node: ast.IfExp) -> List[ast.If]:
-        return [
-            ast.If(
-                test=node.test,
-                body=self._visit_IfExp(node.body)
-                if type(node.body) == ast.IfExp
-                else [ast.Return(value=node.body)],
-                orelse=self._visit_IfExp(node.orelse)
-                if type(node.orelse) == ast.IfExp
-                else [ast.Return(value=node.orelse)],
-            )
-        ]
-
-    def visit_IfExp(self, node: ast.IfExp) -> None:
-        if self.ifExp:
-            body_list = self._visit_IfExp(node)
-            self.populate_body(body_list)
-
-    def visit_Lambda(self, node: ast.Lambda) -> Any:
-        logging.debug('Enter visit_Lambda')
-        tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
-        new_function_def: ast.FunctionDef = ast.FunctionDef(
-            name=tmp_lambda_name,
-            args=node.args,
-            body=[ast.Return(node.body)],
-            decorator_list=[],
-            returns=None
-        )
-        new_function_name: ast.Name = ast.Name(
-            id=tmp_lambda_name,
-            ctx=ast.Load()
-        )
-        return [new_function_def, new_function_name]
 
     def _visit_ListComp(self, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:
@@ -834,11 +745,6 @@ class CFGVisitor(ast.NodeVisitor):
                     orelse=[],
                 )
             ]
-
-    def visit_ListComp(self, node: ast.ListComp) -> None:
-
-        generated_for = self._visit_ListComp(node.elt, node.generators)
-        self.populate_body(generated_for)
 
     # def visit_Raise(self, node):
     #     self.add_stmt(self.curr_block, node)
@@ -879,10 +785,6 @@ class CFGVisitor(ast.NodeVisitor):
                     orelse=[],
                 )
             ]
-
-    def visit_SetComp(self, node: ast.SetComp) -> None:
-        generated_for = self._visit_SetComp(node.elt, node.generators)
-        self.populate_body(generated_for)
 
     def visit_Try(self, node: ast.Try) -> None:
         loop_guard = self.add_loop_block()
@@ -945,17 +847,225 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             self.add_edge(after_try_block.bid, finally_block.bid)
 
+    ################################################################
+    ################################################################
+    # expr
+    ################################################################
+    ################################################################
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> Any:
+        decomposed_expr_sequence = []
+        for expr in node.values:
+            decomposed_expr = self.visit(expr)
+            decomposed_expr_sequence.append(decomposed_expr)
+
+        new_expr_sequence = []
+        new_name_list = []
+        for expr_sequence in decomposed_expr_sequence:
+            new_expr_sequence += expr_sequence[0:-1]
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_expr_sequence.append(
+                ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=expr_sequence[-1]
+                )
+            )
+            new_name_list.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+
+        new_boolop = ast.BoolOp(
+            op=node.op,
+            values=new_name_list
+        )
+        return new_expr_sequence + [new_boolop]
+
+    def visit_BinOp(self, node: ast.BinOp) -> Any:
+        if type(node.left) == ast.Name and type(node.right) == ast.Name:
+            return [node]
+        else:
+            decomposed_sequence1 = self.visit(node.left)
+            tmp_var1 = randoms.RandomVariableName.gen_random_name()
+            tmp_assign1 = ast.Assign(
+                targets=[ast.Name(id=tmp_var1, ctx=ast.Store())],
+                value=decomposed_sequence1[-1]
+            )
+            decomposed_sequence2 = self.visit(node.right)
+            tmp_var2 = randoms.RandomVariableName.gen_random_name()
+            tmp_assign2 = ast.Assign(
+                targets=[ast.Name(id=tmp_var2, ctx=ast.Store())],
+                value=decomposed_sequence2[-1]
+            )
+
+            tmp_binop = ast.BinOp(
+                left=ast.Name(id=tmp_var1, ctx=ast.Load()),
+                op=node.op,
+                right=ast.Name(id=tmp_var2, ctx=ast.Load())
+            )
+
+            return decomposed_sequence1[:-1] + [tmp_assign1] + \
+                   decomposed_sequence2[:-1] + [tmp_assign2] + \
+                   [tmp_binop]
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
+        if type(node.operand) == ast.Name:
+            return [node]
+        else:
+            decomposed_sequence = self.visit(node.operand)
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=decomposed_sequence[-1]
+            )
+            new_unaryop = ast.UnaryOp(
+                op=node.op,
+                operand=ast.Name(id=tmp_var, ctx=ast.Load())
+            )
+            return decomposed_sequence[:-1] + [new_assign, new_unaryop]
+
+    def visit_Lambda(self, node: ast.Lambda) -> Any:
+        tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
+        tmp_function_def: ast.FunctionDef = ast.FunctionDef(
+            name=tmp_lambda_name,
+            args=node.args,
+            body=[ast.Return(node.body)],
+            decorator_list=[],
+            returns=None
+        )
+        tmp_function_name: ast.Name = ast.Name(
+            id=tmp_lambda_name,
+            ctx=ast.Load()
+        )
+        return [tmp_function_def, tmp_function_name]
+
+    def _visit_IfExp(self, node: ast.IfExp) -> List[ast.If]:
+        return [
+            ast.If(
+                test=node.test,
+                body=self._visit_IfExp(node.body)
+                if type(node.body) == ast.IfExp
+                else [ast.Return(value=node.body)],
+                orelse=self._visit_IfExp(node.orelse)
+                if type(node.orelse) == ast.IfExp
+                else [ast.Return(value=node.orelse)],
+            )
+        ]
+
+    def visit_IfExp(self, node: ast.IfExp) -> Any:
+        if self.ifExp:
+            body_list = self._visit_IfExp(node)
+            self.populate_body(body_list)
+
+    def visit_Dict(self, node: ast.Dict) -> Any:
+        return [node]
+
+    def visit_Set(self, node: ast.Set) -> Any:
+        return [node]
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+
+        generated_for = self._visit_ListComp(node.elt, node.generators)
+        self.populate_body(generated_for)
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        generated_for = self._visit_SetComp(node.elt, node.generators)
+        self.populate_body(generated_for)
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        generated_for = self._visit_DictComp(node.key, node.value, node.generators)
+        self.populate_body(generated_for)
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        generator_function: ast.FunctionDef = ast.FunctionDef(
+            name=self.gen_exp_stack[-1],
+            args=ast.arguments(args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+            body=self._visit_GeneratorExp(node, node.generators),
+            decorator_list=[],
+            returns=None
+        )
+        logging.debug(astor.to_source(generator_function))
+        self.visit(generator_function)
+
+    def visit_Await(self, node: ast.Await) -> Any:
+        pass
+
     def visit_Yield(self, node: ast.Yield) -> None:
         self.add_stmt(self.curr_block, node)
         new_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, new_block.bid)
         self.curr_block = new_block
 
-    ################################################################
-    ################################################################
-    # expr
-    ################################################################
-    ################################################################
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
+        pass
+
+    def visit_Compare(self, node: ast.Compare) -> Any:
+        pass
+
+    def visit_Call(self, node: ast.Call) -> Any:
+        if type(node.func) == ast.Lambda:
+            tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
+            tmp_function_def = ast.FunctionDef(
+                name=tmp_lambda_name,
+                args=node.func.args,
+                body=[ast.Return(value=node.func.body)],
+                decorator_list=[],
+                returns=None
+            )
+            call = ast.Call(
+                args=node.args,
+                func=ast.Name(id=tmp_lambda_name, ctx=ast.Load()),
+                keywords=[]
+            )
+            new_sequence = [tmp_function_def, call]
+            return new_sequence
+        elif not all(type(arg) == ast.Name for arg in node.args):
+            arg_sequence = []
+            arg_name_sequence = []
+            for arg_expr in node.args:
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                assign = ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=arg_expr
+                )
+                arg_sequence.append(assign)
+                arg_name = ast.Name(
+                    id=tmp_var,
+                    ctx=ast.Load()
+                )
+                arg_name_sequence.append(arg_name)
+            call = ast.Call(
+                func=node.func,
+                args=arg_name_sequence,
+                keywords=node.keywords
+            )
+            arg_sequence.append(call)
+            return arg_sequence
+        else:
+            return [node]
+            # self.add_stmt(self.curr_block, node)
+            # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+    def visit_Num(self, node: ast.Num) -> Any:
+        return [node]
+
+    def visit_Str(self, node: ast.Str) -> Any:
+        return [node]
+
+    def visit_FormattedValue(self, node: ast.FormattedValue) -> Any:
+        return [node]
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> Any:
+        return [node]
+
+    def visit_Bytes(self, node: ast.Bytes) -> Any:
+        return [node]
+
+    def visit_NameConstant(self, node: ast.NameConstant) -> Any:
+        return [node]
+
+    def visit_Ellipsis(self, node: ast.Ellipsis) -> Any:
+        return [node]
+
+    def visit_Constant(self, node: ast.Constant) -> Any:
+        return [node]
 
     def visit_Attribute(self, node: ast.Attribute) -> Any:
         if type(node.value) == ast.Name:
@@ -974,5 +1084,74 @@ class CFGVisitor(ast.NodeVisitor):
             )
             return ret[0:-1] + [new_assign, new_attribute]
 
-    def visit_Name(self, node: ast.Name) -> ast.Name:
-        return node
+    def visit_Subscript(self, node: ast.Subscript) -> Any:
+        if type(node.value) == ast.Name:
+            return [node]
+        else:
+            decomposed_expr = self.visit(node.value)
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=decomposed_expr[-1]
+            )
+            new_subscript = ast.Subscript(
+                value=ast.Name(id=tmp_var, ctx=ast.Load()),
+                slice=node.slice,
+                ctx=node.ctx
+            )
+            return decomposed_expr[:-1] + [new_assign, new_subscript]
+
+    def visit_Starred(self, node: ast.Starred) -> Any:
+        if type(node.value) == ast.Name:
+            return [node]
+        else:
+            decomposed_expr = self.visit(node.value)
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=decomposed_expr[-1]
+            )
+            new_subscript = ast.Starred(
+                value=ast.Name(id=tmp_var, ctx=ast.Load()),
+                ctx=node.ctx
+            )
+            return decomposed_expr[:-1] + [new_assign, new_subscript]
+
+    def visit_Name(self, node: ast.Name) -> Any:
+        return [node]
+
+    def visit_List(self, node: ast.List) -> Any:
+        if all(type(elt) == ast.Name for elt in node.elts):
+            return [node]
+        else:
+            decomposed_sequence = []
+            decomposed_names = []
+            for elt in node.elts:
+                tmp_decomposed_sequence = self.visit(elt)
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                tmp_assign = ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=tmp_decomposed_sequence[-1]
+                )
+                decomposed_sequence += tmp_decomposed_sequence[:-1] + [tmp_assign]
+                decomposed_names.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            tmp_list = ast.List(elts=decomposed_names, ctx=node.ctx)
+            return decomposed_sequence + [tmp_list]
+
+    def visit_Tuple(self, node: ast.Tuple) -> Any:
+        if all(type(elt) == ast.Name for elt in node.elts):
+            return [node]
+        else:
+            decomposed_sequence = []
+            decomposed_names = []
+            for elt in node.elts:
+                tmp_decomposed_sequence = self.visit(elt)
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                tmp_assign = ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=tmp_decomposed_sequence[-1]
+                )
+                decomposed_sequence += tmp_decomposed_sequence[:-1] + [tmp_assign]
+                decomposed_names.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            tmp_list = ast.Tuple(elts=decomposed_names, ctx=node.ctx)
+            return decomposed_sequence + [tmp_list]

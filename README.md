@@ -48,13 +48,13 @@ project is to generate flows suitable for data flow analysis for Python.
 
 ### Expressions
 
-- [] ast.BoolOp
-- [] ast.BinOp
-- [] ast.UnaryOp
+- [x] ast.BoolOp
+- [x] ast.BinOp
+- [x] ast.UnaryOp
 - [x] ast.Lambda
 - [x] ast.IfExp
-- [] ast.Dict
-- [] ast.Set
+- [x] ast.Dict
+- [x] ast.Set
 - [x] ast.ListComp
 - [x] ast.SetComp
 - [x] ast.DictComp
@@ -64,20 +64,20 @@ project is to generate flows suitable for data flow analysis for Python.
 - [] ast.YieldFrom
 - [] ast.Compare
 - [x] ast.Call
-- [] ast.Num
-- [] ast.Str
-- [] ast.FormattedValue
-- [] ast.JoinedStr
-- [] ast.Bytes
-- [] ast.NameConstant
-- [] ast.Ellipsis
-- [] ast.Constant
+- [x] ast.Num
+- [x] ast.Str
+- [x] ast.FormattedValue
+- [x] ast.JoinedStr
+- [x] ast.Bytes
+- [x] ast.NameConstant
+- [x] ast.Ellipsis
+- [x] ast.Constant
 - [x] ast.Attribute
-- [] ast.Subscript
-- [] ast.Starred
+- [x] ast.Subscript
+- [x] ast.Starred
 - [x] ast.Name
-- [] ast.List
-- [] ast.Tuple
+- [x] ast.List
+- [x] ast.Tuple
 
 Support for other statements and expressions will be added gradually.
 
