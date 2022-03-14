@@ -1085,16 +1085,73 @@ class CFGVisitor(ast.NodeVisitor):
             return ret[0:-1] + [new_assign, new_attribute]
 
     def visit_Subscript(self, node: ast.Subscript) -> Any:
-        pass
+        if type(node.value) == ast.Name:
+            return [node]
+        else:
+            decomposed_expr = self.visit(node.value)
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=decomposed_expr[-1]
+            )
+            new_subscript = ast.Subscript(
+                value=ast.Name(id=tmp_var, ctx=ast.Load()),
+                slice=node.slice,
+                ctx=node.ctx
+            )
+            return decomposed_expr[:-1] + [new_assign, new_subscript]
 
     def visit_Starred(self, node: ast.Starred) -> Any:
-        pass
+        if type(node.value) == ast.Name:
+            return [node]
+        else:
+            decomposed_expr = self.visit(node.value)
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=decomposed_expr[-1]
+            )
+            new_subscript = ast.Starred(
+                value=ast.Name(id=tmp_var, ctx=ast.Load()),
+                ctx=node.ctx
+            )
+            return decomposed_expr[:-1] + [new_assign, new_subscript]
 
     def visit_Name(self, node: ast.Name) -> Any:
         return [node]
 
     def visit_List(self, node: ast.List) -> Any:
-        pass
+        if all(type(elt) == ast.Name for elt in node.elts):
+            return [node]
+        else:
+            decomposed_sequence = []
+            decomposed_names = []
+            for elt in node.elts:
+                tmp_decomposed_sequence = self.visit(elt)
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                tmp_assign = ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=tmp_decomposed_sequence[-1]
+                )
+                decomposed_sequence += tmp_decomposed_sequence[:-1] + [tmp_assign]
+                decomposed_names.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            tmp_list = ast.List(elts=decomposed_names, ctx=node.ctx)
+            return decomposed_sequence + [tmp_list]
 
     def visit_Tuple(self, node: ast.Tuple) -> Any:
-        pass
+        if all(type(elt) == ast.Name for elt in node.elts):
+            return [node]
+        else:
+            decomposed_sequence = []
+            decomposed_names = []
+            for elt in node.elts:
+                tmp_decomposed_sequence = self.visit(elt)
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                tmp_assign = ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=tmp_decomposed_sequence[-1]
+                )
+                decomposed_sequence += tmp_decomposed_sequence[:-1] + [tmp_assign]
+                decomposed_names.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            tmp_list = ast.Tuple(elts=decomposed_names, ctx=node.ctx)
+            return decomposed_sequence + [tmp_list]

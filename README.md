@@ -53,8 +53,8 @@ project is to generate flows suitable for data flow analysis for Python.
 - [x] ast.UnaryOp
 - [x] ast.Lambda
 - [x] ast.IfExp
-- [] ast.Dict
-- [] ast.Set
+- [x] ast.Dict
+- [x] ast.Set
 - [x] ast.ListComp
 - [x] ast.SetComp
 - [x] ast.DictComp
@@ -73,11 +73,11 @@ project is to generate flows suitable for data flow analysis for Python.
 - [x] ast.Ellipsis
 - [x] ast.Constant
 - [x] ast.Attribute
-- [] ast.Subscript
-- [] ast.Starred
+- [x] ast.Subscript
+- [x] ast.Starred
 - [x] ast.Name
-- [] ast.List
-- [] ast.Tuple
+- [x] ast.List
+- [x] ast.Tuple
 
 Support for other statements and expressions will be added gradually.
 
