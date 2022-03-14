@@ -6,6 +6,7 @@ import os
 import ast
 import logging
 from typing import Dict, List, Tuple, Set, Optional, Type, Any
+from collections import deque
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -377,7 +378,10 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         ret = self.visit(node.value)
-        logging.debug(ret)
+        source = ''
+        for expr in ret:
+            source += astor.to_source(expr)
+        logging.debug('Decomposed: ' + source)
         if ret is not None and len(ret) == 1:
             self.add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
@@ -621,7 +625,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> None:
 
-        tmp_var = randoms.RandomVariableName.gen_random_name()
+        tmp_var = randoms.RandomUnusedName.gen_unused_name()
         new_assign: ast.Assign = ast.Assign(
             targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
             value=node.value
@@ -783,22 +787,6 @@ class CFGVisitor(ast.NodeVisitor):
             body_list = self._visit_IfExp(node)
             self.populate_body(body_list)
 
-    def visit_Lambda(self, node: ast.Lambda) -> Any:
-        logging.debug('Enter visit_Lambda')
-        tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
-        new_function_def: ast.FunctionDef = ast.FunctionDef(
-            name=tmp_lambda_name,
-            args=node.args,
-            body=[ast.Return(node.body)],
-            decorator_list=[],
-            returns=None
-        )
-        new_function_name: ast.Name = ast.Name(
-            id=tmp_lambda_name,
-            ctx=ast.Load()
-        )
-        return [new_function_def, new_function_name]
-
     def _visit_ListComp(self, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:
             if self.list_comp_stack[-1]:
@@ -957,6 +945,89 @@ class CFGVisitor(ast.NodeVisitor):
     ################################################################
     ################################################################
 
+    def visit_BoolOp(self, node: ast.BoolOp) -> Any:
+        decomposed_expr_sequence = []
+        for expr in node.values:
+            decomposed_expr = self.visit(expr)
+            decomposed_expr_sequence.append(decomposed_expr)
+
+        new_expr_sequence = []
+        new_name_list = []
+        for expr_sequence in decomposed_expr_sequence:
+            new_expr_sequence += expr_sequence[0:-1]
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_expr_sequence.append(
+                ast.Assign(
+                    targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                    value=expr_sequence[-1]
+                )
+            )
+            new_name_list.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+
+        new_boolop = ast.BoolOp(
+            op=node.op,
+            values=new_name_list
+        )
+        return new_expr_sequence + [new_boolop]
+
+    def visit_BinOp(self, node: ast.BinOp) -> Any:
+        if type(node.left) == ast.Name and type(node.right) == ast.Name:
+            return [node]
+        else:
+            decomposed_sequence1 = self.visit(node.left)
+            tmp_var1 = randoms.RandomVariableName.gen_random_name()
+            tmp_assign1 = ast.Assign(
+                targets=[ast.Name(id=tmp_var1, ctx=ast.Store())],
+                value=decomposed_sequence1[-1]
+            )
+            decomposed_sequence2 = self.visit(node.right)
+            tmp_var2 = randoms.RandomVariableName.gen_random_name()
+            tmp_assign2 = ast.Assign(
+                targets=[ast.Name(id=tmp_var2, ctx=ast.Store())],
+                value=decomposed_sequence2[-1]
+            )
+
+            tmp_binop = ast.BinOp(
+                left=ast.Name(id=tmp_var1, ctx=ast.Load()),
+                op=node.op,
+                right=ast.Name(id=tmp_var2, ctx=ast.Load())
+            )
+
+            return decomposed_sequence1[:-1] + [tmp_assign1] + \
+                   decomposed_sequence2[:-1] + [tmp_assign2] + \
+                   [tmp_binop]
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
+        if type(node.operand) == ast.Name:
+            return [node]
+        else:
+            decomposed_sequence = self.visit(node.operand)
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=decomposed_sequence[-1]
+            )
+            new_unaryop = ast.UnaryOp(
+                op=node.op,
+                operand=ast.Name(id=tmp_var, ctx=ast.Load())
+            )
+            return decomposed_sequence[:-1] + [new_assign, new_unaryop]
+
+    def visit_Lambda(self, node: ast.Lambda) -> Any:
+        tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
+        tmp_function_def: ast.FunctionDef = ast.FunctionDef(
+            name=tmp_lambda_name,
+            args=node.args,
+            body=[ast.Return(node.body)],
+            decorator_list=[],
+            returns=None
+        )
+        tmp_function_name: ast.Name = ast.Name(
+            id=tmp_lambda_name,
+            ctx=ast.Load()
+        )
+        return [tmp_function_def, tmp_function_name]
+
     def visit_Attribute(self, node: ast.Attribute) -> Any:
         if type(node.value) == ast.Name:
             return [node]
@@ -975,4 +1046,4 @@ class CFGVisitor(ast.NodeVisitor):
             return ret[0:-1] + [new_assign, new_attribute]
 
     def visit_Name(self, node: ast.Name) -> ast.Name:
-        return node
+        return [node]

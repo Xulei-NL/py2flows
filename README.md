@@ -48,9 +48,9 @@ project is to generate flows suitable for data flow analysis for Python.
 
 ### Expressions
 
-- [] ast.BoolOp
-- [] ast.BinOp
-- [] ast.UnaryOp
+- [x] ast.BoolOp
+- [x] ast.BinOp
+- [x] ast.UnaryOp
 - [x] ast.Lambda
 - [x] ast.IfExp
 - [] ast.Dict
