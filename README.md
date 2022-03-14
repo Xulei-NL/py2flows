@@ -59,10 +59,10 @@ project is to generate flows suitable for data flow analysis for Python.
 - [x] ast.SetComp
 - [x] ast.DictComp
 - [x] ast.GeneratorExp
-- [] ast.Await
+- [x] ast.Await
 - [x] ast.Yield
-- [] ast.YieldFrom
-- [] ast.Compare
+- [x] ast.YieldFrom
+- [x] ast.Compare
 - [x] ast.Call
 - [x] ast.Num
 - [x] ast.Str
@@ -84,7 +84,7 @@ Support for other statements and expressions will be added gradually.
 ### Additional features
 
 - [x] Removal of comments and docstrings
-- [x] Decomposition of complex statements
+- [x] Decomposition of complex statements(partially)
 - []  Modules and packages
 - [x] Isolated entries and exits
 
