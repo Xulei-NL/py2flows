@@ -960,20 +960,20 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Set(self, node: ast.Set) -> Any:
         return [node]
 
-    def visit_ListComp(self, node: ast.ListComp) -> None:
+    def visit_ListComp(self, node: ast.ListComp) -> Any:
 
         generated_for = self._visit_ListComp(node.elt, node.generators)
         self.populate_body(generated_for)
 
-    def visit_SetComp(self, node: ast.SetComp) -> None:
+    def visit_SetComp(self, node: ast.SetComp) -> Any:
         generated_for = self._visit_SetComp(node.elt, node.generators)
         self.populate_body(generated_for)
 
-    def visit_DictComp(self, node: ast.DictComp) -> None:
+    def visit_DictComp(self, node: ast.DictComp) -> Any:
         generated_for = self._visit_DictComp(node.key, node.value, node.generators)
         self.populate_body(generated_for)
 
-    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
         generator_function: ast.FunctionDef = ast.FunctionDef(
             name=self.gen_exp_stack[-1],
             args=ast.arguments(args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
@@ -985,19 +985,43 @@ class CFGVisitor(ast.NodeVisitor):
         self.visit(generator_function)
 
     def visit_Await(self, node: ast.Await) -> Any:
-        pass
+        return [node]
 
-    def visit_Yield(self, node: ast.Yield) -> None:
+    def visit_Yield(self, node: ast.Yield) -> Any:
         self.add_stmt(self.curr_block, node)
         new_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, new_block.bid)
         self.curr_block = new_block
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
-        pass
+        return [node]
 
     def visit_Compare(self, node: ast.Compare) -> Any:
-        pass
+        if type(node.left) in [ast.Name] and \
+                all(type(comparator) in [ast.Name] for comparator in node.comparators):
+            return [node]
+
+        decomposed_expr1 = self.visit(node.left)
+        tmp_var = randoms.RandomVariableName.gen_random_name()
+        left_assign = ast.Assign(
+            targets=[ast.Name(id=tmp_var, ctx=ast.Load())],
+            value=decomposed_expr1[-1]
+        )
+        left_expr = ast.Name(id=tmp_var, ctx=ast.Load())
+
+        decomposed_sequence = []
+        decomposed_names = []
+        for comparator in node.comparators:
+            tmp_decomposed_sequence = self.visit(comparator)
+            tmp_var = randoms.RandomVariableName.gen_random_name()
+            tmp_assign = ast.Assign(
+                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                value=tmp_decomposed_sequence[-1]
+            )
+            decomposed_sequence += tmp_decomposed_sequence[:-1] + [tmp_assign]
+            decomposed_names.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+        tmp_compare = ast.Compare(left=left_expr, ops=node.ops, comparators=decomposed_names)
+        return decomposed_expr1[:-1] + [left_assign] + decomposed_sequence + [tmp_compare]
 
     def visit_Call(self, node: ast.Call) -> Any:
         if type(node.func) == ast.Lambda:
@@ -1040,8 +1064,6 @@ class CFGVisitor(ast.NodeVisitor):
             return arg_sequence
         else:
             return [node]
-            # self.add_stmt(self.curr_block, node)
-            # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Num(self, node: ast.Num) -> Any:
         return [node]
