@@ -852,7 +852,6 @@ class CFGVisitor(ast.NodeVisitor):
     # expr
     ################################################################
     ################################################################
-
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
         decomposed_expr_sequence = []
         for expr in node.values:
