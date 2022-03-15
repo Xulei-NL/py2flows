@@ -36,7 +36,7 @@ def main():
     if visitor.isolation:
         visitor.add_stmt(visitor.curr_block, ast.Pass())
     visitor.remove_empty_blocks(cfg.start)
-    # cfg.show()
+    cfg.show()
 
 
 if __name__ == '__main__':
