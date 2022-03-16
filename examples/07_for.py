@@ -1,6 +1,6 @@
 sum = 0
 
-for val in numbers:
+for val in [x + 1, y - 1, z * 1]:
     sum = sum + val
     if sum == 10:
         continue

@@ -388,61 +388,54 @@ class CFGVisitor(ast.NodeVisitor):
             logging.debug('AnnAssign without value. Just ignore it')
 
     def visit_For(self, node: ast.For) -> None:
+        iter_sequence = self.visit(node.iter)
+        node.iter = iter_sequence[-1]
+        self.populate_body(iter_sequence[:-1])
 
-        if type(node.iter) in [ast.ListComp, ast.SetComp, ast.DictComp]:
-            tmp_var: str = randoms.RandomVariableName.gen_random_name()
-            new_assign: ast.Assign = ast.Assign(
-                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                value=node.iter
-            )
-            new_for: ast.For = ast.For(
-                target=node.target,
-                iter=ast.Name(id=tmp_var, ctx=ast.Load()),
-                body=node.body,
-                orelse=node.orelse
-            )
-            self.populate_body([new_assign, new_for])
-            return
+        loop_guard = self.add_loop_block()
+        self.curr_block = loop_guard
+        add_stmt(self.curr_block, node)
+        self.loop_guard_stack.append(loop_guard)
+
+        # New block for the body of the for-loop.
+        for_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, for_block.bid)
+        after_for_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, after_for_block.bid)
+        self.loop_stack.append(after_for_block)
+        if not node.orelse:
+            # Block of code after the for loop.
+            # self.add_edge(self.curr_block.bid, after_for_block.bid)
+
+            # self.loop_stack.append(after_for_block)
+            self.curr_block = for_block
+            self.populate_body_to_next_bid(node.body, loop_guard.bid)
         else:
-            loop_guard = self.add_loop_block()
-            self.curr_block = loop_guard
-            add_stmt(self.curr_block, node)
-            self.loop_guard_stack.append(loop_guard)
+            # Block of code after the for loop.
+            or_else_block: BasicBlock = self.new_block()
+            self.add_edge(self.curr_block.bid, or_else_block.bid)
 
-            # New block for the body of the for-loop.
-            for_block: BasicBlock = self.new_block()
-            self.add_edge(self.curr_block.bid, for_block.bid)
-            after_for_block: BasicBlock = self.new_block()
-            self.add_edge(self.curr_block.bid, after_for_block.bid)
-            self.loop_stack.append(after_for_block)
-            if not node.orelse:
-                # Block of code after the for loop.
-                # self.add_edge(self.curr_block.bid, after_for_block.bid)
+            # self.loop_stack.append(after_for_block)
+            self.curr_block = for_block
+            self.populate_body_to_next_bid(node.body, loop_guard.bid)
 
-                # self.loop_stack.append(after_for_block)
-                self.curr_block = for_block
-                self.populate_body_to_next_bid(node.body, loop_guard.bid)
-            else:
-                # Block of code after the for loop.
-                or_else_block: BasicBlock = self.new_block()
-                self.add_edge(self.curr_block.bid, or_else_block.bid)
+            self.curr_block = or_else_block
+            self.populate_body_to_next_bid(node.orelse, after_for_block.bid)
 
-                # self.loop_stack.append(after_for_block)
-                self.curr_block = for_block
-                self.populate_body_to_next_bid(node.body, loop_guard.bid)
-
-                self.curr_block = or_else_block
-                self.populate_body_to_next_bid(node.orelse, after_for_block.bid)
-
-            # Continue building the CFG in the after-for block.
-            self.curr_block = after_for_block
-            self.loop_stack.pop()
-            self.loop_guard_stack.pop()
+        # Continue building the CFG in the after-for block.
+        self.curr_block = after_for_block
+        self.loop_stack.pop()
+        self.loop_guard_stack.pop()
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
         pass
 
     def visit_While(self, node: ast.While) -> None:
+
+        test_sequence = self.visit(node.test)
+        node.test = test_sequence[-1]
+        self.populate_body(test_sequence[:-1])
+
         loop_guard: BasicBlock = self.add_loop_block()
         self.curr_block = loop_guard
         add_stmt(loop_guard, node)
@@ -476,6 +469,11 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_guard_stack.pop()
 
     def visit_If(self, node: ast.If) -> None:
+
+        test_sequence = self.visit(node.test)
+        node.test = test_sequence[-1]
+        self.populate_body(test_sequence[:-1])
+
         # Add the If statement at the end of the current block.
         add_stmt(self.curr_block, node)
 

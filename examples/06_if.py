@@ -1,5 +1,8 @@
 flag = 1
 
+if flag == 1 and len(flag2) == 1:
+    pass
+
 if flag == 1:
     test = 1
 
