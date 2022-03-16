@@ -39,8 +39,8 @@ project is to generate flows suitable for data flow analysis for Python.
 - [x] ast.Assert
 - [x] ast.Import
 - [x] ast.ImportFrom
-- [] ast.Global
-- [] ast.Nonlocal
+- [x] ast.Global
+- [x] ast.Nonlocal
 - [x] ast.Expr
 - [x] ast.Pass
 - [x] ast.Break
