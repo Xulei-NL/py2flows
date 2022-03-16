@@ -24,7 +24,7 @@ project is to generate flows suitable for data flow analysis for Python.
 - [] ast.AsyncFunctionDef
 - [x] ast.ClassDef
 - [x] ast.Return
-- [] ast.Delete
+- [x] ast.Delete
 - [x] ast.Assign
 - [x] ast.AugAssign
 - [x] ast.AnnAssign
@@ -84,9 +84,10 @@ Support for other statements and expressions will be added gradually.
 ### Additional features
 
 - [x] Removal of comments and docstrings
-- [x] Decomposition of complex statements(partially)
-- []  Modules and packages
+- [x] Decomposition of complex statements
+- []  Support for Modules and packages
 - [x] Isolated entries and exits
+- [] Refactor exception handling
 
 ## How to use it
 
