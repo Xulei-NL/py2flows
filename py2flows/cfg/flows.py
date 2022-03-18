@@ -73,10 +73,14 @@ class BasicBlock(object):
                    in [
                        ast.If,
                        ast.For,
+                       ast.Try,
                        ast.While,
+                       ast.With,
+                       ast.AsyncWith,
+                       ast.AsyncFor,
                        ast.FunctionDef,
                        ast.AsyncFunctionDef,
-                       ast.ClassDef,
+                       ast.ClassDef
                    ]
                 else line
             )
@@ -124,6 +128,7 @@ class CFG:
         self.final_blocks: List[BasicBlock] = []
         # Function name to (Args, CFG)
         self.func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = {}
+        self.async_func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = {}
         self.class_cfgs: Dict[str, CFG] = {}
         self.blocks: Dict[int, BasicBlock] = {}
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
@@ -165,6 +170,8 @@ class CFG:
         self.graph = gv.Digraph(name="cluster_" + self.name, format=fmt)
         self._traverse(self.start, calls=calls)
         for k, v in self.func_cfgs.items():
+            self.graph.subgraph(v[1]._show(fmt, calls))
+        for k, v in self.async_func_cfgs.items():
             self.graph.subgraph(v[1]._show(fmt, calls))
         for class_name, classCFG in self.class_cfgs.items():
             self.graph.subgraph(classCFG._show(fmt, calls))
@@ -262,6 +269,35 @@ class CFGVisitor(ast.NodeVisitor):
         logging.debug([elt.__str__() for elt in func_cfg.final_blocks])
         self.cfg.func_cfgs[tree.name] = (arg_list, func_cfg)
 
+    def add_AsyncFuncCFG(self, tree: ast.FunctionDef) -> None:
+        arg_list: List[(str, Optional[ast.AST])] = []
+
+        tmp_arg_list: List[str] = []
+        for arg in tree.args.args:
+            tmp_arg_list.append(arg.arg)
+        len_arg_list = len(tmp_arg_list)
+        len_defaults = len(tree.args.defaults)
+        diff = len_arg_list - len_defaults
+        index = 0
+        while diff > 0:
+            arg_list.append((tmp_arg_list[index], None))
+            diff -= 1
+            index += 1
+
+        for default in tree.args.defaults:
+            arg_list.append((tmp_arg_list[index], default))
+            index += 1
+
+        visitor: CFGVisitor = CFGVisitor(self.isolation)
+        func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
+        if self.isolation:
+            if not func_cfg.final_blocks:
+                visitor.add_stmt(visitor.curr_block, ast.Pass())
+                func_cfg.final_blocks.append(visitor.curr_block)
+        visitor.remove_empty_blocks(func_cfg.start)
+        logging.debug([elt.__str__() for elt in func_cfg.final_blocks])
+        self.cfg.async_func_cfgs[tree.name] = (arg_list, func_cfg)
+
     def add_ClassCFG(self, node: ast.ClassDef):
         class_body: ast.Module = ast.Module(body=node.body)
         visitor: CFGVisitor = CFGVisitor(self.isolation)
@@ -325,7 +361,9 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        pass
+        add_stmt(self.curr_block, node)
+        self.add_AsyncFuncCFG(node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         add_stmt(self.curr_block, node)
@@ -353,7 +391,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        logging.debug(astor.to_source(node.value))
+        # logging.debug('Current assignment: ', astor.to_source(node))
         ret = self.visit(node.value)
 
         if len(ret) == 1:
@@ -369,7 +407,7 @@ class CFGVisitor(ast.NodeVisitor):
         source = ''
         for expr in new_sequence:
             source += astor.to_source(expr)
-        logging.debug('Decomposed: ' + source)
+        logging.debug('Decomposed expr: ' + source)
         self.populate_body(new_sequence)
         return
 
@@ -428,7 +466,44 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_guard_stack.pop()
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        pass
+        iter_sequence = self.visit(node.iter)
+        node.iter = iter_sequence[-1]
+        self.populate_body(iter_sequence[:-1])
+
+        loop_guard = self.add_loop_block()
+        self.curr_block = loop_guard
+        add_stmt(self.curr_block, node)
+        self.loop_guard_stack.append(loop_guard)
+
+        # New block for the body of the for-loop.
+        for_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, for_block.bid)
+        after_for_block: BasicBlock = self.new_block()
+        self.add_edge(self.curr_block.bid, after_for_block.bid)
+        self.loop_stack.append(after_for_block)
+        if not node.orelse:
+            # Block of code after the for loop.
+            # self.add_edge(self.curr_block.bid, after_for_block.bid)
+
+            # self.loop_stack.append(after_for_block)
+            self.curr_block = for_block
+            self.populate_body_to_next_bid(node.body, loop_guard.bid)
+        else:
+            # Block of code after the for loop.
+            or_else_block: BasicBlock = self.new_block()
+            self.add_edge(self.curr_block.bid, or_else_block.bid)
+
+            # self.loop_stack.append(after_for_block)
+            self.curr_block = for_block
+            self.populate_body_to_next_bid(node.body, loop_guard.bid)
+
+            self.curr_block = or_else_block
+            self.populate_body_to_next_bid(node.orelse, after_for_block.bid)
+
+        # Continue building the CFG in the after-for block.
+        self.curr_block = after_for_block
+        self.loop_stack.pop()
+        self.loop_guard_stack.pop()
 
     def visit_While(self, node: ast.While) -> None:
 
@@ -501,15 +576,34 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block: BasicBlock = after_if_block
 
     def visit_With(self, node: ast.With) -> None:
-        pass
+        add_stmt(self.curr_block, node)
+
+        with_body_block = self.new_block()
+        after_with_block = self.new_block()
+
+        self.add_edge(self.curr_block.bid, with_body_block.bid)
+        self.add_edge(self.curr_block.bid, after_with_block.bid)
+        self.curr_block = with_body_block
+        self.populate_body_to_next_bid(node.body, after_with_block.bid)
+
+        self.curr_block = after_with_block
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
-        pass
+        add_stmt(self.curr_block, node)
 
-    # def visit_Raise(self, node):
-    #     add_stmt(self.curr_block, node)
-    #     self.curr_block = self.new_block()
-    #
+        with_body_block = self.new_block()
+        after_with_block = self.new_block()
+
+        self.add_edge(self.curr_block.bid, with_body_block.bid)
+        self.add_edge(self.curr_block.bid, after_with_block.bid)
+        self.curr_block = with_body_block
+        self.populate_body_to_next_bid(node.body, after_with_block.bid)
+
+        self.curr_block = after_with_block
+
+    def visit_Raise(self, node: ast.Raise) -> None:
+        add_stmt(self.curr_block, node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Try(self, node: ast.Try) -> None:
         loop_guard = self.add_loop_block()
@@ -518,9 +612,11 @@ class CFGVisitor(ast.NodeVisitor):
             loop_guard, ast.Try(body=[], handlers=[], orelse=[], finalbody=[])
         )
 
+        try_body_block = self.new_block()
+        self.curr_block = self.add_edge(self.curr_block.bid, try_body_block.bid)
         after_try_block = self.new_block()
-        add_stmt(after_try_block, ast.Name(id="handle errors", ctx=ast.Load()))
         self.populate_body_to_next_bid(node.body, after_try_block.bid)
+        add_stmt(after_try_block, ast.Name(id="handle errors", ctx=ast.Load()))
 
         self.curr_block = after_try_block
 
@@ -622,6 +718,9 @@ class CFGVisitor(ast.NodeVisitor):
     ################################################################
     ################################################################
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
+        if all(type(expr) in [ast.Name] for expr in node.values):
+            return [node]
+
         decomposed_expr_sequence = []
         for expr in node.values:
             decomposed_expr = self.visit(expr)
@@ -753,10 +852,6 @@ class CFGVisitor(ast.NodeVisitor):
                body_sequence[:-1] + [body_assign] + \
                orelse_sequence[:-1] + [orelse_assign] + \
                [tmp_ifexp]
-
-        # if self.ifExp:
-        #     body_list = self._visit_IfExp(node)
-        #     self.populate_body(body_list)
 
     def visit_Dict(self, node: ast.Dict) -> Any:
         return [node]
@@ -933,13 +1028,22 @@ class CFGVisitor(ast.NodeVisitor):
             ]
 
     def visit_Await(self, node: ast.Await) -> Any:
-        return [node]
+        expr_sequence = self.visit(node.value)
+        tmp_await = ast.Await(value=expr_sequence[-1])
+        return expr_sequence[:-1] + [tmp_await]
 
     def visit_Yield(self, node: ast.Yield) -> Any:
-        return [node]
+        if node.value is None:
+            return [node]
+        else:
+            expr_sequence = self.visit(node.value)
+            tmp_yield = ast.Yield(value=expr_sequence[-1])
+            return expr_sequence[:-1] + [tmp_yield]
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
-        return [node]
+        expr_sequence = self.visit(node.value)
+        tmp_yield = ast.Yield(value=expr_sequence[-1])
+        return expr_sequence[:-1] + [tmp_yield]
 
     def visit_Compare(self, node: ast.Compare) -> Any:
         if type(node.left) in [ast.Name] and \

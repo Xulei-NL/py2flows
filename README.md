@@ -3,6 +3,9 @@
 A control flow generator for Python that is able to generate control flow graphs and flows. The motivation behind this
 project is to generate flows suitable for data flow analysis for Python.
 
+**Caveat:** This project is still under development. It's better to use a release version which will be available
+soon. :)
+
 ## Supported language versions
 
 ### Python version
@@ -21,7 +24,7 @@ project is to generate flows suitable for data flow analysis for Python.
 ### Statements
 
 - [x] ast.FunctionDef
-- [] ast.AsyncFunctionDef
+- [x] ast.AsyncFunctionDef(Poor support for now)
 - [x] ast.ClassDef
 - [x] ast.Return
 - [x] ast.Delete
@@ -29,13 +32,13 @@ project is to generate flows suitable for data flow analysis for Python.
 - [x] ast.AugAssign
 - [x] ast.AnnAssign
 - [x] ast.For
-- [] ast.AsyncFor
+- [x] ast.AsyncFor(Poor support for now)
 - [x] ast.While
 - [x] ast.If
-- [] ast.With
-- [] ast.AsyncWith
-- [] ast.Raise
-- [x] ast.Try
+- [x] ast.With(Poor support for now)
+- [x] ast.AsyncWith(Poor support for now)
+- [x] ast.Raise(Poor support for now)
+- [x] ast.Try(Poor support for now)
 - [x] ast.Assert
 - [x] ast.Import
 - [x] ast.ImportFrom
@@ -85,9 +88,11 @@ Support for other statements and expressions will be added gradually.
 
 - [x] Removal of comments and docstrings
 - [x] Decomposition of complex statements
-- []  Support for Modules and packages
 - [x] Isolated entries and exits
+- [] Support for Modules and packages
 - [] Refactor exception handling
+- [] Count characteristics of each file
+- [] Prune temporal variables
 
 ## How to use it
 
