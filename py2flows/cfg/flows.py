@@ -9,6 +9,9 @@ from typing import Dict, List, Tuple, Set, Optional, Type, Any
 
 logging.basicConfig(level=logging.DEBUG)
 
+basic_types = [ast.Num, ast.Str, ast.FormattedValue, ast.JoinedStr,
+               ast.Bytes, ast.NameConstant, ast.Ellipsis, ast.Constant, ast.Name]
+
 
 class BlockId:
     counter: int = 0
@@ -715,81 +718,83 @@ class CFGVisitor(ast.NodeVisitor):
     ################################################################
     ################################################################
     # expr
+    # For now I think there are several basic types in Python.
+    # ast.Num, such as 1
+    # ast.Str, such as 'jojo'
+    # ast.FormattedValue inside JoinedStr, note that I didn't come across a case that it was alone
+    # ast.JoinedStr, such as f'{a}'
+    # ast.Bytes, such as b'a'
+    # ast.NameConstant, such as True
+    # ast.Ellipsis, it's ...
+    # ast.Constant, I didn't know how it would be used in python 3.7
+    # ast.Name, a name represents a value evaluated.
+    #
+    # We care about these basic types since we need some criterion to stop recursion of expanding expressions.
+    #
+
     ################################################################
     ################################################################
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
-        if all(type(expr) in [ast.Name] for expr in node.values):
-            return [node]
-
-        decomposed_expr_sequence = []
-        for expr in node.values:
-            decomposed_expr = self.visit(expr)
-            decomposed_expr_sequence.append(decomposed_expr)
-
         new_expr_sequence = []
-        new_name_list = []
-        for expr_sequence in decomposed_expr_sequence:
-            new_expr_sequence += expr_sequence[0:-1]
+        new_arg_list = []
+        for expr in node.values:
+            if type(expr) not in basic_types:
+                decomposed_sequence = self.visit(expr)
+                new_expr_sequence += decomposed_sequence[:-1]
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                new_expr_sequence.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                        value=decomposed_sequence[-1]
+                    )
+                )
+                new_arg_list.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            else:
+                new_arg_list.append(expr)
+
+        node.values = new_arg_list
+        return new_expr_sequence + [node]
+
+    def visit_BinOp(self, node: ast.BinOp) -> Any:
+        new_expr_sequence = []
+        new_arg_list = []
+        for arg in [node.left, node.right]:
+            if type(arg) not in basic_types:
+                decomposed_sequence = self.visit(arg)
+                new_expr_sequence += decomposed_sequence[:-1]
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                new_expr_sequence.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                        value=decomposed_sequence[-1]
+                    )
+                )
+                new_arg_list.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            else:
+                new_arg_list.append(arg)
+
+        node.left, node.right = new_arg_list
+
+        return new_expr_sequence + [node]
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
+        new_expr_sequence = []
+        if type(node.operand) not in basic_types:
+            decomposed_sequence = self.visit(node.operand)
+            new_expr_sequence += decomposed_sequence[:-1]
             tmp_var = randoms.RandomVariableName.gen_random_name()
             new_expr_sequence.append(
                 ast.Assign(
                     targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                    value=expr_sequence[-1]
+                    value=decomposed_sequence[-1]
                 )
             )
-            new_name_list.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            node.operand = ast.Name(id=tmp_var, ctx=ast.Load())
 
-        new_boolop = ast.BoolOp(
-            op=node.op,
-            values=new_name_list
-        )
-        return new_expr_sequence + [new_boolop]
-
-    def visit_BinOp(self, node: ast.BinOp) -> Any:
-        if type(node.left) == ast.Name and type(node.right) == ast.Name:
-            return [node]
-        else:
-            decomposed_sequence1 = self.visit(node.left)
-            tmp_var1 = randoms.RandomVariableName.gen_random_name()
-            tmp_assign1 = ast.Assign(
-                targets=[ast.Name(id=tmp_var1, ctx=ast.Store())],
-                value=decomposed_sequence1[-1]
-            )
-            decomposed_sequence2 = self.visit(node.right)
-            tmp_var2 = randoms.RandomVariableName.gen_random_name()
-            tmp_assign2 = ast.Assign(
-                targets=[ast.Name(id=tmp_var2, ctx=ast.Store())],
-                value=decomposed_sequence2[-1]
-            )
-
-            tmp_binop = ast.BinOp(
-                left=ast.Name(id=tmp_var1, ctx=ast.Load()),
-                op=node.op,
-                right=ast.Name(id=tmp_var2, ctx=ast.Load())
-            )
-
-            return decomposed_sequence1[:-1] + [tmp_assign1] + \
-                   decomposed_sequence2[:-1] + [tmp_assign2] + \
-                   [tmp_binop]
-
-    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
-        if type(node.operand) == ast.Name:
-            return [node]
-        else:
-            decomposed_sequence = self.visit(node.operand)
-            tmp_var = randoms.RandomVariableName.gen_random_name()
-            new_assign = ast.Assign(
-                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                value=decomposed_sequence[-1]
-            )
-            new_unaryop = ast.UnaryOp(
-                op=node.op,
-                operand=ast.Name(id=tmp_var, ctx=ast.Load())
-            )
-            return decomposed_sequence[:-1] + [new_assign, new_unaryop]
+        return new_expr_sequence + [node]
 
     def visit_Lambda(self, node: ast.Lambda) -> Any:
-        tmp_lambda_name = randoms.RandomLambdaName.gen_lambda_name()
+        tmp_lambda_name: str = randoms.RandomLambdaName.gen_lambda_name()
         tmp_function_def: ast.FunctionDef = ast.FunctionDef(
             name=tmp_lambda_name,
             args=node.args,
@@ -817,41 +822,27 @@ class CFGVisitor(ast.NodeVisitor):
         ]
 
     def visit_IfExp(self, node: ast.IfExp) -> Any:
-        if type(node.test) in [ast.Name] and type(node.body) in [ast.Name] and type(node.orelse) in [ast.Name]:
-            return [node]
+        new_expr_sequence = []
+        new_arg_list = []
 
-        test_sequence = self.visit(node.test)
-        test_var = randoms.RandomVariableName.gen_random_name()
-        test_assign = ast.Assign(
-            targets=[ast.Name(id=test_var, ctx=ast.Store())],
-            value=test_sequence[-1]
-        )
-        test_name = ast.Name(id=test_var, ctx=ast.Load())
-        body_sequence = self.visit(node.body)
-        body_var = randoms.RandomVariableName.gen_random_name()
-        body_assign = ast.Assign(
-            targets=[ast.Name(id=body_var, ctx=ast.Store())],
-            value=body_sequence[-1]
-        )
-        body_name = ast.Name(id=body_var, ctx=ast.Load())
-        orelse_sequence = self.visit(node.orelse)
-        orelse_var = randoms.RandomVariableName.gen_random_name()
-        orelse_assign = ast.Assign(
-            targets=[ast.Name(id=orelse_var, ctx=ast.Store())],
-            value=orelse_sequence[-1]
-        )
-        orelse_name = ast.Name(id=orelse_var, ctx=ast.Load())
+        for arg in [node.test, node.body, node.orelse]:
+            if type(arg) not in basic_types:
+                decomposed_sequence = self.visit(arg)
+                new_expr_sequence += decomposed_sequence[:-1]
+                tmp_var = randoms.RandomVariableName.gen_random_name()
+                new_expr_sequence.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
+                        value=decomposed_sequence[-1]
+                    )
+                )
+                new_arg_list.append(ast.Name(id=tmp_var, ctx=ast.Load()))
+            else:
+                new_arg_list.append(arg)
 
-        tmp_ifexp = ast.IfExp(
-            test=test_name,
-            body=body_name,
-            orelse=orelse_name
-        )
+        node.test, node.body, node.orelse = new_arg_list
 
-        return test_sequence[:-1] + [test_assign] + \
-               body_sequence[:-1] + [body_assign] + \
-               orelse_sequence[:-1] + [orelse_assign] + \
-               [tmp_ifexp]
+        return new_expr_sequence + [node]
 
     def visit_Dict(self, node: ast.Dict) -> Any:
         return [node]
@@ -861,30 +852,37 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_ListComp(self, node: ast.ListComp) -> Any:
 
+        new_expr_sequence = []
         listcomp_var = randoms.RandomVariableName.gen_random_name()
-        list_assign = ast.Assign(
-            targets=[ast.Name(id=listcomp_var, ctx=ast.Store())],
-            value=ast.List(elts=[], ctx=ast.Load())
+        new_expr_sequence.append(
+            ast.Assign(
+                targets=[ast.Name(id=listcomp_var, ctx=ast.Store())],
+                value=ast.List(elts=[], ctx=ast.Load())
+            )
         )
-        listcomp_sequence = self._visit_ListComp(listcomp_var, node.elt, node.generators)
-        listcomp_sequence.append(ast.Name(id=listcomp_var, ctx=ast.Load()))
-        return [list_assign] + listcomp_sequence
+        new_expr_sequence += self._visit_ListComp(listcomp_var, node.elt, node.generators)
+        new_expr_sequence.append(ast.Name(id=listcomp_var, ctx=ast.Load()))
+        return new_expr_sequence
 
-    def _visit_ListComp(self, listcomp_var: str, elt: ast.expr, generators: List[ast.comprehension]):
+    def _visit_ListComp(self, listcomp_var: str, elt: ast.expr, generators: List[ast.comprehension]) -> Any:
         if not generators:
-            return [
-                ast.Expr(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id=listcomp_var, ctx=ast.Load()),
-                            attr="append",
-                            ctx=ast.Load(),
-                        ),
-                        args=[elt],
-                        keywords=[],
-                    )
-                )
-            ]
+            new_expr_sequence = []
+            tmp_call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id=listcomp_var, ctx=ast.Load()),
+                    attr="append",
+                    ctx=ast.Load(),
+                ),
+                args=[elt],
+                keywords=[],
+            )
+            if type(elt) not in basic_types:
+                decomposed_expr = self.visit(elt)
+                new_expr_sequence += decomposed_expr[:-1]
+                tmp_call.args = decomposed_expr[-1:]
+
+            new_expr_sequence.append(ast.Expr(value=tmp_call))
+            return new_expr_sequence
         else:
             return [
                 ast.For(
@@ -904,30 +902,37 @@ class CFGVisitor(ast.NodeVisitor):
             ]
 
     def visit_SetComp(self, node: ast.SetComp) -> Any:
+        new_expr_sequence = []
         setcomp_var = randoms.RandomVariableName.gen_random_name()
-        set_assign = ast.Assign(
-            targets=[ast.Name(id=setcomp_var, ctx=ast.Store())],
-            value=ast.Call(args=[], func=ast.Name(id='set', ctx=ast.Load()), keywords=[])
+        new_expr_sequence.append(
+            ast.Assign(
+                targets=[ast.Name(id=setcomp_var, ctx=ast.Store())],
+                value=ast.Call(args=[], func=ast.Name(id='set', ctx=ast.Load()), keywords=[])
+            )
         )
-        setcomp_sequence = self._visit_SetComp(setcomp_var, node.elt, node.generators)
-        setcomp_sequence.append(ast.Name(id=setcomp_var, ctx=ast.Load()))
-        return [set_assign] + setcomp_sequence
+        new_expr_sequence += self._visit_SetComp(setcomp_var, node.elt, node.generators)
+        new_expr_sequence.append(ast.Name(id=setcomp_var, ctx=ast.Load()))
+        return new_expr_sequence
 
     def _visit_SetComp(self, setcomp_var: str, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:
-            return [
-                ast.Expr(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id=setcomp_var, ctx=ast.Load()),
-                            attr="add",
-                            ctx=ast.Load(),
-                        ),
-                        args=[elt],
-                        keywords=[]
-                    )
-                )
-            ]
+            new_expr_sequence = []
+            tmp_call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id=setcomp_var, ctx=ast.Load()),
+                    attr="add",
+                    ctx=ast.Load(),
+                ),
+                args=[elt],
+                keywords=[]
+            )
+            if type(elt) not in basic_types:
+                decomposed_expr = self.visit(elt)
+                new_expr_sequence += decomposed_expr[:-1]
+                tmp_call.args = decomposed_expr[-1:]
+
+            new_expr_sequence.append(ast.Expr(value=tmp_call))
+            return new_expr_sequence
         else:
             return [
                 ast.For(
@@ -947,29 +952,43 @@ class CFGVisitor(ast.NodeVisitor):
             ]
 
     def visit_DictComp(self, node: ast.DictComp) -> Any:
+        new_expr_sequence = []
         dictcomp_var = randoms.RandomVariableName.gen_random_name()
-        dict_assign = ast.Assign(
-            targets=[ast.Name(id=dictcomp_var, ctx=ast.Store())],
-            value=ast.Dict(keys=[], values=[])
+        new_expr_sequence.append(
+            ast.Assign(
+                targets=[ast.Name(id=dictcomp_var, ctx=ast.Store())],
+                value=ast.Dict(keys=[], values=[])
+            )
         )
-        dictcomp_sequence = self._visit_DictComp(dictcomp_var, node.key, node.value, node.generators)
-        dictcomp_sequence.append(ast.Name(id=dictcomp_var, ctx=ast.Load()))
-        return [dict_assign] + dictcomp_sequence
+        new_expr_sequence += self._visit_DictComp(dictcomp_var, node.key, node.value, node.generators)
+        new_expr_sequence.append(ast.Name(id=dictcomp_var, ctx=ast.Load()))
+        return new_expr_sequence
 
     def _visit_DictComp(self, dictcomp_var: str, key: ast.expr, value: ast.expr, generators):
         if not generators:
-            return [
-                ast.Assign(
-                    targets=[
-                        ast.Subscript(
-                            value=ast.Name(id=dictcomp_var, ctx=ast.Load()),
-                            slice=ast.Index(value=key),
-                            ctx=ast.Store(),
-                        )
-                    ],
-                    value=value,
-                )
-            ]
+            new_expr_sequence = []
+            tmp_index = ast.Index(value=key)
+            if type(key) not in basic_types:
+                decomposed_expr = self.visit(key)
+                new_expr_sequence += decomposed_expr[:-1]
+                tmp_index.value = decomposed_expr[-1]
+            tmp_subscript = ast.Subscript(
+                value=ast.Name(id=dictcomp_var, ctx=ast.Load()),
+                slice=tmp_index,
+                ctx=ast.Store(),
+            )
+
+            tmp_assign = ast.Assign(
+                targets=[tmp_subscript],
+                value=value,
+            )
+            if type(value) not in basic_types:
+                decomposed_expr = self.visit(value)
+                new_expr_sequence += decomposed_expr[:-1]
+                tmp_assign.value = decomposed_expr[-1]
+
+            new_expr_sequence.append(tmp_assign)
+            return new_expr_sequence
         else:
             return [
                 ast.For(
@@ -989,26 +1008,34 @@ class CFGVisitor(ast.NodeVisitor):
             ]
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
+        new_expr_sequence = []
         generator_var = randoms.RandomGeneratorName.gen_generator_name()
-        generator_function: ast.FunctionDef = ast.FunctionDef(
-            name=generator_var,
-            args=ast.arguments(args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
-            body=self._visit_GeneratorExp(node, node.generators),
-            decorator_list=[],
-            returns=None
+        new_expr_sequence.append(
+            ast.FunctionDef(
+                name=generator_var,
+                args=ast.arguments(args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+                body=self._visit_GeneratorExp(node.elt, node.generators),
+                decorator_list=[],
+                returns=None
+            )
         )
-        generator_sequence = []
-        generator_sequence.append(generator_function)
-        generator_sequence.append(ast.Call(
+        new_expr_sequence.append(ast.Call(
             func=ast.Name(id=generator_var, ctx=ast.Load()),
             args=[],
             keywords=[]
         ))
-        return generator_sequence
+        return new_expr_sequence
 
-    def _visit_GeneratorExp(self, node: ast.GeneratorExp, generators: List[ast.comprehension]):
+    def _visit_GeneratorExp(self, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:
-            return [ast.Expr(value=ast.Yield(value=node.elt))]
+            new_expr_sequence = []
+            tmp_yield = ast.Yield(value=elt)
+            if type(elt) not in basic_types:
+                decomposed_expr = self.visit(elt)
+                new_expr_sequence += decomposed_expr[:-1]
+                tmp_yield.value = decomposed_expr[-1]
+            new_expr_sequence.append(ast.Expr(value=tmp_yield))
+            return new_expr_sequence
         else:
             return [
                 ast.For(
@@ -1017,33 +1044,43 @@ class CFGVisitor(ast.NodeVisitor):
                     body=[
                         ast.If(
                             test=self.combine_conditions(generators[0].ifs),
-                            body=self._visit_GeneratorExp(node, generators[1:]),
+                            body=self._visit_GeneratorExp(elt, generators[1:]),
                             orelse=[],
                         )
                     ]
                     if generators[0].ifs
-                    else self._visit_GeneratorExp(node, generators[1:]),
+                    else self._visit_GeneratorExp(elt, generators[1:]),
                     orelse=[],
                 )
             ]
 
     def visit_Await(self, node: ast.Await) -> Any:
-        expr_sequence = self.visit(node.value)
-        tmp_await = ast.Await(value=expr_sequence[-1])
-        return expr_sequence[:-1] + [tmp_await]
+        new_expr_sequence = []
+        if type(node.value) not in basic_types:
+            decomposed_expr = self.visit(node.value)
+            new_expr_sequence += decomposed_expr[:-1]
+            node.value = decomposed_expr[-1]
+        new_expr_sequence.append(node)
+        return new_expr_sequence
 
     def visit_Yield(self, node: ast.Yield) -> Any:
-        if node.value is None:
-            return [node]
-        else:
-            expr_sequence = self.visit(node.value)
-            tmp_yield = ast.Yield(value=expr_sequence[-1])
-            return expr_sequence[:-1] + [tmp_yield]
+        node.value = None if node.value is None else node.value
+        new_expr_sequence = []
+        if type(node.value) not in basic_types:
+            decomposed_expr = self.visit(node.value)
+            new_expr_sequence += decomposed_expr[:-1]
+            node.value = decomposed_expr[-1]
+        new_expr_sequence.append(node)
+        return new_expr_sequence
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
-        expr_sequence = self.visit(node.value)
-        tmp_yield = ast.Yield(value=expr_sequence[-1])
-        return expr_sequence[:-1] + [tmp_yield]
+        new_expr_sequence = []
+        if type(node.value) not in basic_types:
+            decomposed_expr = self.visit(node.value)
+            new_expr_sequence += decomposed_expr[:-1]
+            node.value = decomposed_expr[-1]
+        new_expr_sequence.append(node)
+        return new_expr_sequence
 
     def visit_Compare(self, node: ast.Compare) -> Any:
         if type(node.left) in [ast.Name] and \
