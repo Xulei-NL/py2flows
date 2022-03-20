@@ -4,10 +4,10 @@ import ast
 import logging
 import argparse
 
-logging.basicConfig(level=logging.DEBUG)
-
 
 def main():
+    logging.basicConfig(level=logging.DEBUG)
+
     parser = argparse.ArgumentParser(description='compute flows of control flow graphs. '
                                                  'But of course you can use it to examine cfgs only')
     parser.add_argument('file_name', help='path to the Python file')
