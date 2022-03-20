@@ -29,10 +29,8 @@ class RandomLambdaName:
 
 
 class RandomUnusedName:
-    counter = 0
     prefix = '_tmp_unused_var_'
 
     @classmethod
     def gen_unused_name(cls) -> str:
-        cls.counter += 1
-        return cls.prefix + str(cls.counter)
+        return cls.prefix

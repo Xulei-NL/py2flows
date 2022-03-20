@@ -7,10 +7,8 @@ import ast
 import logging
 from typing import Dict, List, Tuple, Set, Optional, Type, Any
 
-logging.basicConfig(level=logging.DEBUG)
-
-basic_types = [ast.Num, ast.Str, ast.FormattedValue, ast.JoinedStr,
-               ast.Bytes, ast.NameConstant, ast.Ellipsis, ast.Constant, ast.Name]
+BASIC_TYPES = (ast.Num, ast.Str, ast.FormattedValue, ast.JoinedStr,
+               ast.Bytes, ast.NameConstant, ast.Ellipsis, ast.Constant, ast.Name)
 
 
 class BlockId:
@@ -72,19 +70,19 @@ class BasicBlock(object):
             line = astor.to_source(stmt)
             code += (
                 line.split("\n")[0] + "\n"
-                if type(stmt)
-                   in [
-                       ast.If,
-                       ast.For,
-                       ast.Try,
-                       ast.While,
-                       ast.With,
-                       ast.AsyncWith,
-                       ast.AsyncFor,
-                       ast.FunctionDef,
-                       ast.AsyncFunctionDef,
-                       ast.ClassDef
-                   ]
+                if type(stmt) in [
+                    ast.If,
+                    ast.For,
+                    ast.Try,
+                    ast.While,
+                    ast.With,
+                    ast.AsyncWith,
+                    ast.AsyncFor,
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef,
+                    ast.ClassDef,
+                    ast.excepthandler,
+                ]
                 else line
             )
         return code
@@ -201,7 +199,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block: Optional[BasicBlock] = None
 
         self.isolation = isolation
-        self.loop_stack: List[BasicBlock] = []
+        self.after_loop_stack: List[BasicBlock] = []
         self.loop_guard_stack: List[BasicBlock] = []
 
     def build(self, name: str, tree: ast.Module) -> CFG:
@@ -379,14 +377,14 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.final_blocks.append(node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         else:
-            expr_sequence = self.visit(node.value)
-            if len(expr_sequence) == 1:
+            new_expr_sequence = self.visit(node.value)
+            if len(new_expr_sequence) == 1:
                 add_stmt(self.curr_block, node)
                 self.cfg.final_blocks.append(node)
                 self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
             else:
-                return_stmt = ast.Return(value=expr_sequence[-1])
-                generated_return_sequence = expr_sequence[:-1] + [return_stmt]
+                return_stmt = ast.Return(value=new_expr_sequence[-1])
+                generated_return_sequence = new_expr_sequence[:-1] + [return_stmt]
                 self.populate_body(generated_return_sequence)
 
     def visit_Delete(self, node: ast.Delete) -> None:
@@ -395,18 +393,18 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         # logging.debug('Current assignment: ', astor.to_source(node))
-        ret = self.visit(node.value)
+        new_expr_sequence = self.visit(node.value)
 
-        if len(ret) == 1:
+        if len(new_expr_sequence) == 1:
             add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
             return
 
         new_assign = ast.Assign(
             targets=node.targets,
-            value=ret[-1]
+            value=new_expr_sequence[-1]
         )
-        new_sequence = ret[:-1] + [new_assign]
+        new_sequence = new_expr_sequence[:-1] + [new_assign]
         source = ''
         for expr in new_sequence:
             source += astor.to_source(expr)
@@ -443,7 +441,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.add_edge(self.curr_block.bid, for_block.bid)
         after_for_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, after_for_block.bid)
-        self.loop_stack.append(after_for_block)
+        self.after_loop_stack.append(after_for_block)
         if not node.orelse:
             # Block of code after the for loop.
             # self.add_edge(self.curr_block.bid, after_for_block.bid)
@@ -465,7 +463,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         # Continue building the CFG in the after-for block.
         self.curr_block = after_for_block
-        self.loop_stack.pop()
+        self.after_loop_stack.pop()
         self.loop_guard_stack.pop()
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
@@ -483,7 +481,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.add_edge(self.curr_block.bid, for_block.bid)
         after_for_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, after_for_block.bid)
-        self.loop_stack.append(after_for_block)
+        self.after_loop_stack.append(after_for_block)
         if not node.orelse:
             # Block of code after the for loop.
             # self.add_edge(self.curr_block.bid, after_for_block.bid)
@@ -505,7 +503,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         # Continue building the CFG in the after-for block.
         self.curr_block = after_for_block
-        self.loop_stack.pop()
+        self.after_loop_stack.pop()
         self.loop_guard_stack.pop()
 
     def visit_While(self, node: ast.While) -> None:
@@ -522,7 +520,7 @@ class CFGVisitor(ast.NodeVisitor):
         # New block for the case where the test in the while is False.
         after_while_block: BasicBlock = self.new_block()
         self.add_edge(self.curr_block.bid, after_while_block.bid)
-        self.loop_stack.append(after_while_block)
+        self.after_loop_stack.append(after_while_block)
 
         if not node.orelse:
             # New block for the case where the test in the while is True.
@@ -543,7 +541,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         # Continue building the CFG in the after-while block.
         self.curr_block = after_while_block
-        self.loop_stack.pop()
+        self.after_loop_stack.pop()
         self.loop_guard_stack.pop()
 
     def visit_If(self, node: ast.If) -> None:
@@ -604,6 +602,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         self.curr_block = after_with_block
 
+    # Need to record exception handling stack
     def visit_Raise(self, node: ast.Raise) -> None:
         add_stmt(self.curr_block, node)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
@@ -617,51 +616,43 @@ class CFGVisitor(ast.NodeVisitor):
 
         try_body_block = self.new_block()
         self.curr_block = self.add_edge(self.curr_block.bid, try_body_block.bid)
-        after_try_block = self.new_block()
-        self.populate_body_to_next_bid(node.body, after_try_block.bid)
-        add_stmt(after_try_block, ast.Name(id="handle errors", ctx=ast.Load()))
+        exception_handling_sentinel = self.new_block()
+        self.populate_body_to_next_bid(node.body, exception_handling_sentinel.bid)
+        add_stmt(exception_handling_sentinel, ast.Name(id="exception handling", ctx=ast.Load()))
+        self.curr_block = exception_handling_sentinel
 
-        self.curr_block = after_try_block
-
+        fake_after_try_block = self.new_block()
         if node.handlers:
             for handler in node.handlers:
-                before_handler_block = self.new_block()
-                self.curr_block = before_handler_block
+                handler_type_block = self.new_block()
+                self.curr_block = handler_type_block
+                add_stmt(handler_type_block,
+                         handler.type if handler.type else ast.Name(id='BaseException', ctx=ast.Load()))
                 self.add_edge(
-                    after_try_block.bid,
-                    before_handler_block.bid,
-                    handler.type
-                    if handler.type
-                    else ast.Name(id="Error", ctx=ast.Load()),
+                    exception_handling_sentinel.bid,
+                    handler_type_block.bid,
+                    ast.Name(id='Except Type', ctx=ast.Load())
                 )
+                self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
-                after_handler_block = self.new_block()
-                add_stmt(
-                    after_handler_block, ast.Name(id="end except", ctx=ast.Load())
-                )
-                self.populate_body_to_next_bid(handler.body, after_handler_block.bid)
-                self.add_edge(after_handler_block.bid, after_try_block.bid)
+                self.populate_body_to_next_bid(handler.body, fake_after_try_block.bid)
 
         if node.orelse:
             before_else_block = self.new_block()
             self.curr_block = before_else_block
             self.add_edge(
-                after_try_block.bid,
+                exception_handling_sentinel.bid,
                 before_else_block.bid,
                 ast.Name(id="No Error", ctx=ast.Load()),
             )
 
-            after_else_block = self.new_block()
-            add_stmt(after_else_block, ast.Name(id="end no error", ctx=ast.Load()))
-            self.populate_body_to_next_bid(node.orelse, after_else_block.bid)
-            self.add_edge(after_else_block.bid, after_try_block.bid)
+            self.populate_body_to_next_bid(node.orelse, fake_after_try_block.bid)
 
-        finally_block = self.new_block()
-        self.curr_block = finally_block
-
+        self.curr_block = fake_after_try_block
+        finally_block = fake_after_try_block
         if node.finalbody:
             self.add_edge(
-                after_try_block.bid,
+                exception_handling_sentinel.bid,
                 finally_block.bid,
                 ast.Name(id="Finally", ctx=ast.Load()),
             )
@@ -669,8 +660,10 @@ class CFGVisitor(ast.NodeVisitor):
             self.populate_body_to_next_bid(node.finalbody, after_finally_block.bid)
             self.curr_block = after_finally_block
         else:
-            self.add_edge(after_try_block.bid, finally_block.bid)
+            self.add_edge(exception_handling_sentinel.bid, finally_block.bid)
 
+    # If assert fails, AssertionError will be raised.
+    # If assert succeeds, execute normal flow.
     def visit_Assert(self, node):
         add_stmt(self.curr_block, node)
         self.cfg.final_blocks.append(self.curr_block)
@@ -695,24 +688,24 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Expr(self, node: ast.Expr) -> None:
 
         tmp_var = randoms.RandomUnusedName.gen_unused_name()
-        new_assign: ast.Assign = ast.Assign(
+        tmp_assign = ast.Assign(
             targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
             value=node.value
         )
-        self.visit(new_assign)
+        self.visit(tmp_assign)
 
     def visit_Pass(self, node: ast.Pass) -> None:
         add_stmt(self.curr_block, node)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Break(self, node: ast.Break) -> None:
-        assert len(self.loop_stack), "Found break not inside loop"
         add_stmt(self.curr_block, node)
-        self.add_edge(self.curr_block.bid, self.loop_stack[-1].bid)
+        assert len(self.after_loop_stack), "Found break not inside loop"
+        self.add_edge(self.curr_block.bid, self.after_loop_stack[-1].bid)
 
-    def visit_Continue(self, node: ast.Continue):
+    def visit_Continue(self, node: ast.Continue) -> None:
         add_stmt(self.curr_block, node)
-        assert self.loop_guard_stack
+        assert self.loop_guard_stack, "Found continue not inside loop"
         self.add_edge(self.curr_block.bid, self.loop_guard_stack[-1].bid)
 
     ################################################################
@@ -749,7 +742,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_arg_list = []
 
         for expr in expr_list:
-            if type(expr) not in basic_types:
+            if type(expr) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(expr, new_expr_sequence)
                 new_arg_list.append(tmp_name)
             else:
@@ -778,7 +771,7 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
         new_expr_sequence = []
         expr = node.operand
-        if type(expr) not in basic_types:
+        if type(expr) not in BASIC_TYPES:
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.operand = tmp_name
 
@@ -853,7 +846,7 @@ class CFGVisitor(ast.NodeVisitor):
                 args=[elt],
                 keywords=[],
             )
-            if type(elt) not in basic_types:
+            if type(elt) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(elt, new_expr_sequence)
                 tmp_call.args = [tmp_name]
 
@@ -902,7 +895,7 @@ class CFGVisitor(ast.NodeVisitor):
                 args=[elt],
                 keywords=[]
             )
-            if type(elt) not in basic_types:
+            if type(elt) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(elt)
                 tmp_call.args = [tmp_name]
 
@@ -944,7 +937,7 @@ class CFGVisitor(ast.NodeVisitor):
             new_expr_sequence = []
 
             tmp_index = ast.Index(value=key)
-            if type(key) not in basic_types:
+            if type(key) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(key, new_expr_sequence)
                 tmp_index.value = tmp_name
             tmp_subscript = ast.Subscript(
@@ -957,7 +950,7 @@ class CFGVisitor(ast.NodeVisitor):
                 targets=[tmp_subscript],
                 value=value,
             )
-            if type(value) not in basic_types:
+            if type(value) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(value, new_expr_sequence)
                 tmp_assign.value = tmp_name
 
@@ -1018,7 +1011,7 @@ class CFGVisitor(ast.NodeVisitor):
         if not generators:
             new_expr_sequence = []
             tmp_yield = ast.Yield(value=elt)
-            if type(elt) not in basic_types:
+            if type(elt) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(elt, new_expr_sequence)
                 tmp_yield.value = tmp_name
             new_expr_sequence.append(ast.Expr(value=tmp_yield))
@@ -1045,7 +1038,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
 
         expr = node.value
-        if type(expr) not in basic_types:
+        if type(expr) not in BASIC_TYPES:
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1058,7 +1051,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
 
         expr = node.value
-        if type(expr) not in basic_types:
+        if type(expr) not in BASIC_TYPES:
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1068,7 +1061,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
 
         expr = node.value
-        if type(expr) not in basic_types:
+        if type(expr) not in BASIC_TYPES:
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1078,7 +1071,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         new_arg_list = []
         for expr in [node.left] + node.comparators:
-            if type(expr) not in basic_types:
+            if type(expr) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(expr, new_expr_sequence)
                 new_arg_list.append(tmp_name)
             else:
@@ -1100,7 +1093,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         new_arg_list = []
         for expr in node.args:
-            if type(expr) not in basic_types:
+            if type(expr) not in BASIC_TYPES:
                 tmp_name = self.decompose_expr(expr, new_expr_sequence)
                 new_arg_list.append(tmp_name)
             else:
@@ -1137,7 +1130,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         expr = node.value
 
-        if type(expr) not in basic_types:
+        if type(expr) not in BASIC_TYPES:
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1147,7 +1140,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         expr = node.value
 
-        if type(expr) not in basic_types:
+        if type(expr) not in BASIC_TYPES:
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1157,7 +1150,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         expr = node.value
 
-        if type(expr) not in basic_types:
+        if type(expr) not in BASIC_TYPES:
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 

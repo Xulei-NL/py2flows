@@ -38,7 +38,7 @@ soon. :)
 - [x] ast.With(Poor support for now)
 - [x] ast.AsyncWith(Poor support for now)
 - [x] ast.Raise(Poor support for now)
-- [x] ast.Try(Poor support for now)
+- [x] ast.Try(Relatively poor support for now)
 - [x] ast.Assert
 - [x] ast.Import
 - [x] ast.ImportFrom
@@ -90,9 +90,10 @@ Support for other statements and expressions will be added gradually.
 - [x] Decomposition of complex statements
 - [x] Isolated entries and exits
 - [] Support for Modules and packages
-- [] Refactor exception handling
+- [x] Refactor exception handling
 - [] Count characteristics of each file
-- [] Prune temporal variables
+- [x] Prune temporal variables
+- [] Use two labels to denote call and return of each function call
 
 ## How to use it
 
