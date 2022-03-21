@@ -1,15 +1,12 @@
 try:
     a = 1
-    b = 2
-    c = 3
 except Error1:
     pass
-except Error2:
-    pass
 except:
-    pass
+    print("Unknown")
+    raise
 else:
     pass
 finally:
     pass
-print(a)
+pass

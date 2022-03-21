@@ -221,6 +221,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.isolation = isolation
         self.after_loop_stack: List[BasicBlock] = []
         self.loop_guard_stack: List[BasicBlock] = []
+        self.raise_stack: List[BasicBlock] = []
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -395,13 +396,13 @@ class CFGVisitor(ast.NodeVisitor):
         if node.value is None:
             add_stmt(self.curr_block, node)
             self.cfg.final_blocks.append(node)
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            self.curr_block = self.new_block()
         else:
             new_expr_sequence = self.visit(node.value)
             if len(new_expr_sequence) == 1:
                 add_stmt(self.curr_block, node)
                 self.cfg.final_blocks.append(node)
-                self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+                self.curr_block = self.new_block()
             else:
                 return_stmt = ast.Return(value=new_expr_sequence[-1])
                 generated_return_sequence = new_expr_sequence[:-1] + [return_stmt]
@@ -631,7 +632,9 @@ class CFGVisitor(ast.NodeVisitor):
     # Need to record exception handling stack
     def visit_Raise(self, node: ast.Raise) -> None:
         add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        if self.raise_stack:
+            self.add_edge(self.curr_block.bid, self.raise_stack[-1].bid)
+        self.curr_block = self.new_block()
 
     def visit_Try(self, node: ast.Try) -> None:
         loop_guard = self.add_loop_block()
@@ -643,7 +646,9 @@ class CFGVisitor(ast.NodeVisitor):
         try_body_block = self.new_block()
         self.curr_block = self.add_edge(self.curr_block.bid, try_body_block.bid)
         exception_handling_sentinel = self.new_block()
+        self.raise_stack.append(exception_handling_sentinel)
         self.populate_body_to_next_bid(node.body, exception_handling_sentinel.bid)
+        self.raise_stack.pop()
         add_stmt(exception_handling_sentinel, ast.Name(id="exception handling", ctx=ast.Load()))
         self.curr_block = exception_handling_sentinel
 

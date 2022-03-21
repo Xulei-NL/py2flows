@@ -99,7 +99,7 @@ Support for other statements and expressions will be added gradually.
 
 ### Install
 
-1. Install all dependencies listed in requirements.
+1. Install all dependencies listed in *requirements.txt*
 2. Open a terminal and run `python setup.py install`
 3. If step 2 succeeds, an executable file *py2flows* will be available.
 4. `py2flows --help`
