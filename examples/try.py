@@ -1,12 +1,13 @@
 try:
     a = 1
 except Error1:
-    pass
+    a = 2
 except:
     print("Unknown")
     raise
 else:
-    pass
+    a = 3
 finally:
-    pass
-pass
+    a = 4
+
+a = 5
