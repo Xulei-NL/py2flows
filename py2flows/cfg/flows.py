@@ -5,7 +5,7 @@ import graphviz as gv
 import os
 import ast
 import logging
-from typing import Dict, List, Tuple, Set, Optional, Type, Any
+from typing import Dict, List, Tuple, Set, Optional, Any
 
 BASIC_TYPES = (ast.Num, ast.Str, ast.FormattedValue, ast.JoinedStr,
                ast.Bytes, ast.NameConstant, ast.Ellipsis, ast.Constant, ast.Name)
@@ -92,6 +92,26 @@ class BasicBlock(object):
 
     def __str__(self):
         return "Block ID: {}".format(self.bid)
+
+
+class CallAndAssignBlock(BasicBlock):
+    def __init__(self, basic_block: BasicBlock):
+        super().__init__(basic_block.bid)
+        self.prev = basic_block.prev
+        self.next = basic_block.prev
+        self.stmt = basic_block.stmt
+        self.calls = basic_block.calls
+
+        self.call_block = None
+        self.call_id = None
+        self.exit_block = None
+        self.exit_id = None
+
+    def add_call_exit(self, call_block: BasicBlock, exit_block: BasicBlock):
+        self.call_block = call_block
+        self.exit_block = exit_block
+        self.call_id = call_block.bid
+        self.exit_id = exit_block.bid
 
 
 class FuncBlock(BasicBlock):
@@ -396,6 +416,10 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = self.visit(node.value)
 
         if len(new_expr_sequence) == 1:
+            if type(node.value) in [ast.Call]:
+                self.curr_block = CallAndAssignBlock(self.curr_block)
+                self.curr_block.add_call_exit(call_block=self.new_block(), exit_block=self.new_block())
+                logging.debug('Call id and exit id: (%d, %d)', self.curr_block.call_id, self.curr_block.exit_id)
             add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
             return
@@ -404,7 +428,9 @@ class CFGVisitor(ast.NodeVisitor):
             targets=node.targets,
             value=new_expr_sequence[-1]
         )
-        new_sequence = new_expr_sequence[:-1] + [new_assign]
+        new_sequence: List = new_expr_sequence[:-1] + [new_assign]
+        if type(node.value) in [ast.ListComp, ast.SetComp, ast.DictComp]:
+            new_sequence.append(ast.Delete(targets=[ast.Name(id=new_expr_sequence[-1].id, ctx=ast.Del())]))
         source = ''
         for expr in new_sequence:
             source += astor.to_source(expr)
@@ -896,7 +922,7 @@ class CFGVisitor(ast.NodeVisitor):
                 keywords=[]
             )
             if type(elt) not in BASIC_TYPES:
-                tmp_name = self.decompose_expr(elt)
+                tmp_name = self.decompose_expr(elt, new_expr_sequence)
                 tmp_call.args = [tmp_name]
 
             new_expr_sequence.append(ast.Expr(value=tmp_call))

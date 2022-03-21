@@ -93,7 +93,7 @@ Support for other statements and expressions will be added gradually.
 - [x] Refactor exception handling
 - [] Count characteristics of each file
 - [x] Prune temporal variables
-- [] Use two labels to denote call and return of each function call
+- [x] Use two labels to denote call and return of each function call
 
 ## How to use it
 
