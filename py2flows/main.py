@@ -1,4 +1,4 @@
-from .cfg import comments, flows
+from py2flows.cfg import comments, flows
 import os.path
 import ast
 import logging
@@ -18,7 +18,7 @@ def main():
     logging.debug(args.file_name)
     logging.debug(args.isolation)
 
-    file = open(args.file_name, "r")
+    file = open(args.file_name, "r", encoding='utf-8')
     source = file.read()
     file.close()
 
