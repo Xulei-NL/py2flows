@@ -30,12 +30,14 @@ def main():
     visitor = flows.CFGVisitor(args.isolation)
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
-    logging.debug('flows: %s', sorted(cfg.flows))
-    logging.debug('edges: %s', sorted(cfg.edges.keys()))
+    logging.debug('Previous edges: %s', sorted(cfg.edges.keys()))
     logging.debug('Current Label: %d', visitor.curr_block.bid)
     if visitor.isolation:
         visitor.add_stmt(visitor.curr_block, ast.Pass())
     visitor.remove_empty_blocks(cfg.start)
+    visitor.refactor_flows()
+    logging.debug('Refactored edges: %s', sorted(cfg.edges.keys()))
+    logging.debug('Refactored flows: %s', visitor.cfg.flows)
     cfg.show()
 
 

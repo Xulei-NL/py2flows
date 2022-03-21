@@ -5,7 +5,8 @@ import graphviz as gv
 import os
 import ast
 import logging
-from typing import Dict, List, Tuple, Set, Optional, Any
+from collections import defaultdict
+from typing import Dict, List, Tuple, Set, Optional, Any, DefaultDict
 
 BASIC_TYPES = (ast.Num, ast.Str, ast.FormattedValue, ast.JoinedStr,
                ast.Bytes, ast.NameConstant, ast.Ellipsis, ast.Constant, ast.Name)
@@ -155,7 +156,7 @@ class CFG:
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
 
-        self.flows: Set[Tuple[int, int]] = set()
+        self.flows: DefaultDict[int, Set[int]] = defaultdict(set)
 
     def _traverse(
             self, block: BasicBlock, visited: Set[int] = set(), calls: bool = True
@@ -252,7 +253,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.blocks[frm_id].next.append(to_id)
         self.cfg.blocks[to_id].prev.append(frm_id)
         self.cfg.edges[(frm_id, to_id)] = condition
-        self.cfg.flows.add((frm_id, to_id))
+        # self.cfg.flows.add((frm_id, to_id))
         return self.cfg.blocks[to_id]
 
     def add_loop_block(self) -> BasicBlock:
@@ -289,6 +290,7 @@ class CFGVisitor(ast.NodeVisitor):
                 visitor.add_stmt(visitor.curr_block, ast.Pass())
                 func_cfg.final_blocks.append(visitor.curr_block)
         visitor.remove_empty_blocks(func_cfg.start)
+        visitor.refactor_flows()
         logging.debug([elt.__str__() for elt in func_cfg.final_blocks])
         self.cfg.func_cfgs[tree.name] = (arg_list, func_cfg)
 
@@ -318,6 +320,7 @@ class CFGVisitor(ast.NodeVisitor):
                 visitor.add_stmt(visitor.curr_block, ast.Pass())
                 func_cfg.final_blocks.append(visitor.curr_block)
         visitor.remove_empty_blocks(func_cfg.start)
+        visitor.refactor_flows()
         logging.debug([elt.__str__() for elt in func_cfg.final_blocks])
         self.cfg.async_func_cfgs[tree.name] = (arg_list, func_cfg)
 
@@ -336,15 +339,10 @@ class CFGVisitor(ast.NodeVisitor):
                     for next_bid in list(block.next):
                         next_block = self.cfg.blocks[next_bid]
                         self.add_edge(prev_bid, next_bid)
-                        # self.cfg.flows.add((prev_bid, next_bid))
                         self.cfg.edges.pop((block.bid, next_bid), None)
                         next_block.remove_from_prev(block.bid)
-                        # if (block.bid, next_block.bid) in self.cfg.flows:
-                        #     self.cfg.flows.remove((block.bid, next_block.bid))
                     self.cfg.edges.pop((prev_bid, block.bid), None)
                     prev_block.remove_from_next(block.bid)
-                    # if (prev_block.bid, block.bid) in self.cfg.flows:
-                    #     self.cfg.flows.remove((prev_block.bid, block.bid))
 
                 block.prev.clear()
                 for next_bid in list(block.next):
@@ -354,6 +352,10 @@ class CFGVisitor(ast.NodeVisitor):
             else:
                 for next_bid in list(block.next):
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
+
+    def refactor_flows(self):
+        for fst_id, snd_id in self.cfg.edges:
+            self.cfg.flows[fst_id].add(snd_id)
 
     def combine_conditions(self, node_list: List[ast.expr]) -> ast.expr:
         return (
