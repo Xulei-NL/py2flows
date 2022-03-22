@@ -1,8 +1,27 @@
-from py2flows.cfg import comments, flows
+from .cfg import comments, flows
 import os.path
 import ast
 import logging
 import argparse
+
+
+def construct_CFG(file_name) -> flows.CFG:
+    with open(file_name) as handler:
+        source = handler.read()
+        comments_cleaner = comments.CommentsCleaner(source)
+        comments_cleaner.remove_comments_and_docstrings()
+        comments_cleaner.format_code()
+        visitor = flows.CFGVisitor(isolation=True)
+        base_name = os.path.basename(file_name)
+        cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
+        flows.add_stmt(visitor.curr_block, ast.Pass())
+        visitor.remove_empty_blocks(cfg.start)
+        visitor.refactor_flows()
+        logging.debug(visitor.cfg.flows)
+        logging.debug(visitor.cfg.blocks)
+        cfg.show()
+
+        return cfg
 
 
 def main():
@@ -14,6 +33,12 @@ def main():
     parser.add_argument('-iso', '--isolation',
                         help='If specified, each function will have isolated entries and exits',
                         action='store_true')
+    parser.add_argument('-f', '--format', default='png',
+                        help='Specify the format of output graph. Basically three formats: png(default), svg and pdf')
+    parser.add_argument('-p', '--path', default='./',
+                        help='Specify the path of output graph. The default is current directory')
+    parser.add_argument('-n', '--name', default='output',
+                        help='Specify the name of the output file. The default is output')
     args = parser.parse_args()
     logging.debug(args.file_name)
     logging.debug(args.isolation)
@@ -33,12 +58,12 @@ def main():
     logging.debug('Previous edges: %s', sorted(cfg.edges.keys()))
     logging.debug('Current Label: %d', visitor.curr_block.bid)
     if visitor.isolation:
-        visitor.add_stmt(visitor.curr_block, ast.Pass())
+        flows.add_stmt(visitor.curr_block, ast.Pass())
     visitor.remove_empty_blocks(cfg.start)
     visitor.refactor_flows()
     logging.debug('Refactored edges: %s', sorted(cfg.edges.keys()))
     logging.debug('Refactored flows: %s', visitor.cfg.flows)
-    cfg.show()
+    cfg.show(fmt=args.format, filepath=args.path + '/' + args.name)
 
 
 if __name__ == '__main__':

@@ -187,7 +187,7 @@ class CFG:
                     else "",
                 )
 
-    def _show(self, fmt: str = "svg", calls: bool = True) -> gv.dot.Digraph:
+    def _show(self, fmt: str, calls: bool = True) -> gv.dot.Digraph:
         # self.graph = gv.Digraph(name='cluster_'+self.name, format=fmt, graph_attr={'label': self.name})
         self.graph = gv.Digraph(name="cluster_" + self.name, format=fmt)
         self._traverse(self.start, calls=calls)
@@ -201,7 +201,7 @@ class CFG:
 
     def show(
             self,
-            filepath: str = "../output",
+            filepath: str = "output",
             fmt: str = "png",
             calls: bool = True,
             show: bool = True,
@@ -213,7 +213,7 @@ class CFG:
 
 class CFGVisitor(ast.NodeVisitor):
 
-    def __init__(self, isolation: int):
+    def __init__(self, isolation: bool):
         super().__init__()
         self.ifExp = False
         self.cfg: Optional[CFG] = None
