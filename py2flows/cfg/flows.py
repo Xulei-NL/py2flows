@@ -224,6 +224,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_guard_stack: List[BasicBlock] = []
         self.raise_except_stack: List[BasicBlock] = []
         self.raise_final_stack: List[BasicBlock] = []
+        self.is_in_class: List[bool] = []
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -287,7 +288,7 @@ class CFGVisitor(ast.NodeVisitor):
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
         if self.isolation:
             if not func_cfg.final_blocks:
-                visitor.add_stmt(visitor.curr_block, ast.Pass())
+                add_stmt(visitor.curr_block, ast.Pass())
                 func_cfg.final_blocks.append(visitor.curr_block)
         visitor.remove_empty_blocks(func_cfg.start)
         visitor.refactor_flows()
@@ -317,18 +318,20 @@ class CFGVisitor(ast.NodeVisitor):
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
         if self.isolation:
             if not func_cfg.final_blocks:
-                visitor.add_stmt(visitor.curr_block, ast.Pass())
+                add_stmt(visitor.curr_block, ast.Pass())
                 func_cfg.final_blocks.append(visitor.curr_block)
         visitor.remove_empty_blocks(func_cfg.start)
         visitor.refactor_flows()
-        logging.debug([elt.__str__() for elt in func_cfg.final_blocks])
         self.cfg.async_func_cfgs[tree.name] = (arg_list, func_cfg)
 
     def add_ClassCFG(self, node: ast.ClassDef):
         class_body: ast.Module = ast.Module(body=node.body)
         visitor: CFGVisitor = CFGVisitor(self.isolation)
+        visitor.is_in_class.append(True)
         class_cfg: CFG = visitor.build(node.name, class_body)
+        visitor.remove_empty_blocks(class_cfg.start)
         self.cfg.class_cfgs[node.name] = class_cfg
+        visitor.is_in_class.pop()
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -381,9 +384,11 @@ class CFGVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        add_stmt(self.curr_block, node)
+        # We only display fields in classes.
+        if not self.is_in_class:
+            add_stmt(self.curr_block, node)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_FuncCFG(node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         add_stmt(self.curr_block, node)

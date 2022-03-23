@@ -19,5 +19,7 @@ class Employee:
         print("takin out the trash")
         type(self).empCount -= 1
 
+    miao = 'miaowu'
+
 
 emp2 = Employee("Jed", 5000)
