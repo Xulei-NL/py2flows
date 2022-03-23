@@ -187,26 +187,27 @@ class CFG:
                     else "",
                 )
 
-    def _show(self, fmt: str, calls: bool = True) -> gv.dot.Digraph:
+    def _show(self, fmt: str, name: str) -> gv.dot.Digraph:
         # self.graph = gv.Digraph(name='cluster_'+self.name, format=fmt, graph_attr={'label': self.name})
         self.graph = gv.Digraph(name="cluster_" + self.name, format=fmt)
-        self._traverse(self.start, calls=calls)
-        for k, v in self.func_cfgs.items():
-            self.graph.subgraph(v[1]._show(fmt, calls))
-        for k, v in self.async_func_cfgs.items():
-            self.graph.subgraph(v[1]._show(fmt, calls))
+        self.graph.attr(label=name)
+        self._traverse(self.start)
+        for func_name, funcCFG in self.func_cfgs.items():
+            self.graph.subgraph(funcCFG[1]._show(fmt, func_name))
+        for func_name, funcCFG in self.async_func_cfgs.items():
+            self.graph.subgraph(funcCFG[1]._show(fmt, func_name))
         for class_name, classCFG in self.class_cfgs.items():
-            self.graph.subgraph(classCFG._show(fmt, calls))
+            self.graph.subgraph(classCFG._show(fmt, class_name))
         return self.graph
 
     def show(
             self,
             filepath: str = "output",
             fmt: str = "png",
-            calls: bool = True,
             show: bool = True,
+            name: str = None
     ) -> None:
-        self._show(fmt, calls)
+        self._show(fmt, self.name)
         path = os.path.normpath(filepath)
         self.graph.render(path, view=show, cleanup=True)
 
@@ -385,9 +386,8 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         # We only display fields in classes.
-        if not self.is_in_class:
-            add_stmt(self.curr_block, node)
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        # add_stmt(self.curr_block, node)
+        # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_FuncCFG(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
@@ -396,9 +396,9 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        add_stmt(self.curr_block, node)
+        # add_stmt(self.curr_block, node)
+        # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_ClassCFG(node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Return(self, node: ast.Return) -> None:
         if node.value is None:
