@@ -1,9 +1,10 @@
 # py2flows
 
-A control flow generator for Python that is able to generate control flow graphs and flows. The motivation behind this
-project is to generate flows suitable for data flow analysis for Python.
+A control flow generator for Python that is able to generate control flow graphs and corresponding flows. The motivation
+behind this project is to generate flows suitable for data flow analysis for Python. In my plan, an instance of
+a [dynamic monotone framework](https://github.com/LayneInNL/dmf) are going to be implemented upon it.
 
-**Caveat:** This project is still under development. It's better to use a release version which will be available
+**Caveat:** This project is still under development. It's better to use a release version which will be available very
 soon. :)
 
 ## Supported language versions
@@ -89,11 +90,20 @@ Support for other statements and expressions will be added gradually.
 - [x] Removal of comments and docstrings
 - [x] Decomposition of complex statements
 - [x] Isolated entries and exits
-- [] Support for Modules and packages
+- [] Support for Modules and packages. Motivation: a project may contain multiple packages and modules. So we would like
+  to maintain a data structure to represent this relationship. It would be helpful for static analysis.
 - [x] Refactor exception handling
-- [] Count characteristics of each file
+- [] Count characteristics of each file. Motivation: Emm. It is related to my thesis topic. I wanna count the tendency
+  of each source file. I bet this feature would be implemented in 2 weeks.
 - [x] Prune temporal variables
 - [x] Use two labels to denote call and return of each function call
+- [x] Understandable CFGs generated
+
+### What can be better
+
+- [] The data structure representing classes. Motivation: As we know, classes consist of fields and methods. So it's
+  better to have a good data structure to store and retrieve fields and methods elegantly. I think it also holds for
+  functions(In modern languages, functions can be shadowed).
 
 ## How to use it
 
