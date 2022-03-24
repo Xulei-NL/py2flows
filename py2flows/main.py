@@ -9,14 +9,9 @@ def construct_CFG(file_name) -> flows.CFG:
     with open(file_name) as handler:
         source = handler.read()
         comments_cleaner = comments.CommentsCleaner(source)
-        comments_cleaner.remove_comments_and_docstrings()
-        comments_cleaner.format_code()
         visitor = flows.CFGVisitor(isolation=True)
         base_name = os.path.basename(file_name)
         cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
-        flows.add_stmt(visitor.curr_block, ast.Pass())
-        visitor.remove_empty_blocks(cfg.start)
-        visitor.refactor_flows()
         logging.debug(visitor.cfg.flows)
         logging.debug(visitor.cfg.blocks)
         cfg.show()
@@ -48,22 +43,14 @@ def main():
     file.close()
 
     comments_cleaner = comments.CommentsCleaner(source)
-    comments_cleaner.remove_comments_and_docstrings()
-    comments_cleaner.format_code()
     logging.debug(comments_cleaner.source)
 
     visitor = flows.CFGVisitor(args.isolation)
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
-    logging.debug('Previous edges: %s', sorted(cfg.edges.keys()))
-    logging.debug('Current Label: %d', visitor.curr_block.bid)
-    if visitor.isolation:
-        flows.add_stmt(visitor.curr_block, ast.Pass())
-    visitor.remove_empty_blocks(cfg.start)
-    visitor.refactor_flows()
     logging.debug('Refactored edges: %s', sorted(cfg.edges.keys()))
     logging.debug('Refactored flows: %s', visitor.cfg.flows)
-    cfg.show(fmt=args.format, filepath=args.path + '/' + args.name)
+    cfg.show(fmt=args.format, filepath=args.path + '/' + args.name, name=base_name)
 
 
 if __name__ == '__main__':

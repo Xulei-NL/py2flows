@@ -21,27 +21,10 @@ class BlockId:
         return cls.counter
 
 
-class BasicFlow:
-    def __init__(self, first_label: int, second_label: int):
-        self.first_label: int = first_label
-        self.second_label: int = second_label
-
-
-class FuncFlow:
-    def __init__(
-            self, call_label: int, entry_label: int, return_label: int, exit_label: int
-    ):
-        self.call_label: int = call_label
-        self.entry_label: int = entry_label
-        self.return_label: int = return_label
-        self.exit_label: int = exit_label
-
-
 class BasicBlock(object):
     def __init__(self, bid: int):
         self.bid: int = bid
         self.stmt = []
-        self.calls: List[str] = []
         self.prev: List[int] = []
         self.next: List[int] = []
 
@@ -88,9 +71,6 @@ class BasicBlock(object):
             )
         return code
 
-    def calls_to_code(self) -> str:
-        return "\n".join(self.calls)
-
     def __str__(self):
         return "Block ID: {}".format(self.bid)
 
@@ -101,7 +81,6 @@ class CallAndAssignBlock(BasicBlock):
         self.prev = basic_block.prev
         self.next = basic_block.prev
         self.stmt = basic_block.stmt
-        self.calls = basic_block.calls
 
         self.call_block = None
         self.call_id = None
@@ -114,28 +93,8 @@ class CallAndAssignBlock(BasicBlock):
         self.call_id = call_block.bid
         self.exit_id = exit_block.bid
 
-
-class FuncBlock(BasicBlock):
-    def __init__(self, bid: int):
-        super().__init__(bid)
-        self.name: Optional[str] = None
-        self.paras: List[str] = []
-
-
-class CallBlock(BasicBlock):
-    def __init__(self, bid: int):
-        super().__init__(bid)
-        self.args: List[str] = []
-        self.call = bid
-        self.exit = BlockId.gen_block_id()
-
     def __str__(self):
         return "Block ID: {}".format(self.bid)
-
-
-class TryBlock(BasicBlock):
-    def __init__(self, bid: int):
-        super().__init__(bid)
 
 
 def add_stmt(block: BasicBlock, stmt) -> None:
@@ -147,7 +106,8 @@ class CFG:
         self.name: str = name
 
         self.start: Optional[BasicBlock] = None
-        self.final_blocks: List[BasicBlock] = []
+        self.start_block: Optional[BasicBlock] = None
+        self.final_block: Optional[BasicBlock] = None
         # Function name to (Args, CFG)
         self.func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = {}
         self.async_func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = {}
@@ -155,30 +115,16 @@ class CFG:
         self.blocks: Dict[int, BasicBlock] = {}
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
-
         self.flows: DefaultDict[int, Set[int]] = defaultdict(set)
 
     def _traverse(
-            self, block: BasicBlock, visited: Set[int] = set(), calls: bool = True
+            self, block: BasicBlock, visited: Set[int] = set()
     ) -> None:
         if block.bid not in visited:
             visited.add(block.bid)
             self.graph.node(str(block.bid), label=block.stmt_to_code())
-            if calls and block.calls:
-                self.graph.node(
-                    str(block.bid) + "_call",
-                    label=block.calls_to_code(),
-                    _attributes={"shape": "box"},
-                )
-                self.graph.edge(
-                    str(block.bid),
-                    str(block.bid) + "_call",
-                    label="calls",
-                    _attributes={"style": "dashed"},
-                )
-
             for next_bid in block.next:
-                self._traverse(self.blocks[next_bid], visited, calls=calls)
+                self._traverse(self.blocks[next_bid], visited)
                 self.graph.edge(
                     str(block.bid),
                     str(next_bid),
@@ -187,17 +133,16 @@ class CFG:
                     else "",
                 )
 
-    def _show(self, fmt: str, name: str) -> gv.dot.Digraph:
-        # self.graph = gv.Digraph(name='cluster_'+self.name, format=fmt, graph_attr={'label': self.name})
+    def generate(self, fmt: str, name: str) -> gv.dot.Digraph:
         self.graph = gv.Digraph(name="cluster_" + self.name, format=fmt)
         self.graph.attr(label=name)
         self._traverse(self.start)
         for func_name, funcCFG in self.func_cfgs.items():
-            self.graph.subgraph(funcCFG[1]._show(fmt, func_name))
+            self.graph.subgraph(funcCFG[1].generate(fmt, func_name))
         for func_name, funcCFG in self.async_func_cfgs.items():
-            self.graph.subgraph(funcCFG[1]._show(fmt, func_name))
+            self.graph.subgraph(funcCFG[1].generate(fmt, func_name))
         for class_name, classCFG in self.class_cfgs.items():
-            self.graph.subgraph(classCFG._show(fmt, class_name))
+            self.graph.subgraph(classCFG.generate(fmt, class_name))
         return self.graph
 
     def show(
@@ -207,16 +152,15 @@ class CFG:
             show: bool = True,
             name: str = None
     ) -> None:
-        self._show(fmt, self.name)
+        self.generate(fmt, name)
         path = os.path.normpath(filepath)
         self.graph.render(path, view=show, cleanup=True)
 
 
 class CFGVisitor(ast.NodeVisitor):
 
-    def __init__(self, isolation: bool):
+    def __init__(self, isolation: bool = False):
         super().__init__()
-        self.ifExp = False
         self.cfg: Optional[CFG] = None
         self.curr_block: Optional[BasicBlock] = None
 
@@ -225,17 +169,13 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_guard_stack: List[BasicBlock] = []
         self.raise_except_stack: List[BasicBlock] = []
         self.raise_final_stack: List[BasicBlock] = []
-        self.is_in_class: List[bool] = []
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
         self.curr_block = self.new_block()
-        self.cfg.start = self.curr_block
-
         self.visit(tree)
-        # self.remove_empty_blocks(self.cfg.start)
-        logging.debug('Start id: %d', self.cfg.start.bid)
-        logging.debug('End id: %d', self.curr_block.bid)
+        self.remove_empty_blocks(self.cfg.start)
+        self.refactor_flows()
         return self.cfg
 
     def new_block(self) -> BasicBlock:
@@ -243,19 +183,10 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.blocks[bid] = BasicBlock(bid)
         return self.cfg.blocks[bid]
 
-    def new_func_block(self, bid: int) -> FuncBlock:
-        self.cfg.blocks[bid] = FuncBlock(bid)
-        return self.cfg.blocks[bid]
-
-    def new_call_block(self, bid: int) -> CallBlock:
-        self.cfg.blocks[bid] = CallBlock(bid)
-        return self.cfg.blocks[bid]
-
     def add_edge(self, frm_id: int, to_id: int, condition=None) -> BasicBlock:
         self.cfg.blocks[frm_id].next.append(to_id)
         self.cfg.blocks[to_id].prev.append(frm_id)
         self.cfg.edges[(frm_id, to_id)] = condition
-        # self.cfg.flows.add((frm_id, to_id))
         return self.cfg.blocks[to_id]
 
     def add_loop_block(self) -> BasicBlock:
@@ -287,13 +218,6 @@ class CFGVisitor(ast.NodeVisitor):
 
         visitor: CFGVisitor = CFGVisitor(self.isolation)
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
-        if self.isolation:
-            if not func_cfg.final_blocks:
-                add_stmt(visitor.curr_block, ast.Pass())
-                func_cfg.final_blocks.append(visitor.curr_block)
-        visitor.remove_empty_blocks(func_cfg.start)
-        visitor.refactor_flows()
-        logging.debug([elt.__str__() for elt in func_cfg.final_blocks])
         self.cfg.func_cfgs[tree.name] = (arg_list, func_cfg)
 
     def add_AsyncFuncCFG(self, tree: ast.FunctionDef) -> None:
@@ -317,22 +241,13 @@ class CFGVisitor(ast.NodeVisitor):
 
         visitor: CFGVisitor = CFGVisitor(self.isolation)
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
-        if self.isolation:
-            if not func_cfg.final_blocks:
-                add_stmt(visitor.curr_block, ast.Pass())
-                func_cfg.final_blocks.append(visitor.curr_block)
-        visitor.remove_empty_blocks(func_cfg.start)
-        visitor.refactor_flows()
         self.cfg.async_func_cfgs[tree.name] = (arg_list, func_cfg)
 
     def add_ClassCFG(self, node: ast.ClassDef):
         class_body: ast.Module = ast.Module(body=node.body)
         visitor: CFGVisitor = CFGVisitor(self.isolation)
-        visitor.is_in_class.append(True)
         class_cfg: CFG = visitor.build(node.name, class_body)
-        visitor.remove_empty_blocks(class_cfg.start)
         self.cfg.class_cfgs[node.name] = class_cfg
-        visitor.is_in_class.pop()
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -379,37 +294,36 @@ class CFGVisitor(ast.NodeVisitor):
             self.add_edge(self.curr_block.bid, to_bid)
 
     def visit_Module(self, node: ast.Module) -> None:
+        self.cfg.start = self.curr_block
         if self.isolation:
-            add_stmt(self.curr_block, ast.Pass())
+            self.cfg.start_block = self.curr_block
+            add_stmt(self.cfg.start_block, ast.Pass())
+            self.cfg.final_block = self.new_block()
+            add_stmt(self.cfg.final_block, ast.Pass())
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.generic_visit(node)
+        if self.isolation:
+            self.curr_block = self.add_edge(self.curr_block.bid, self.cfg.final_block.bid)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         # We only display fields in classes.
-        # add_stmt(self.curr_block, node)
-        # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_FuncCFG(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        add_stmt(self.curr_block, node)
         self.add_AsyncFuncCFG(node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # add_stmt(self.curr_block, node)
-        # self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_ClassCFG(node)
 
     def visit_Return(self, node: ast.Return) -> None:
         if node.value is None:
             add_stmt(self.curr_block, node)
-            self.cfg.final_blocks.append(node)
             self.curr_block = self.new_block()
         else:
             new_expr_sequence = self.visit(node.value)
             if len(new_expr_sequence) == 1:
                 add_stmt(self.curr_block, node)
-                self.cfg.final_blocks.append(node)
                 self.curr_block = self.new_block()
             else:
                 return_stmt = ast.Return(value=new_expr_sequence[-1])
@@ -421,7 +335,6 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        # logging.debug('Current assignment: ', astor.to_source(node))
         new_expr_sequence = self.visit(node.value)
 
         if len(new_expr_sequence) == 1:
@@ -711,7 +624,6 @@ class CFGVisitor(ast.NodeVisitor):
     # If assert succeeds, execute normal flow.
     def visit_Assert(self, node):
         add_stmt(self.curr_block, node)
-        self.cfg.final_blocks.append(self.curr_block)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Import(self, node: ast.Import) -> None:
