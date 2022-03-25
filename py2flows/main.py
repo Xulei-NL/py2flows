@@ -50,6 +50,7 @@ def main():
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
     logging.debug('Refactored edges: %s', sorted(cfg.edges.keys()))
     logging.debug('Refactored flows: %s', visitor.cfg.flows)
+    logging.debug('Refactored labels: %s', visitor.cfg.labels)
     cfg.show(fmt=args.format, filepath=args.path + '/' + args.name, name=base_name)
 
 

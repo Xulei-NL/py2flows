@@ -115,7 +115,8 @@ class CFG:
         self.blocks: Dict[int, BasicBlock] = {}
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
-        self.flows: DefaultDict[int, Set[int]] = defaultdict(set)
+        self.flows: Set[Tuple[int, int]] = set()
+        self.labels: Set[int] = set()
 
     def _traverse(
             self, block: BasicBlock, visited: Set[int] = set()
@@ -175,7 +176,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.new_block()
         self.visit(tree)
         self.remove_empty_blocks(self.cfg.start)
-        self.refactor_flows()
+        self.refactor_flows_and_labels()
         return self.cfg
 
     def new_block(self) -> BasicBlock:
@@ -272,9 +273,11 @@ class CFGVisitor(ast.NodeVisitor):
                 for next_bid in list(block.next):
                     self.remove_empty_blocks(self.cfg.blocks[next_bid], visited)
 
-    def refactor_flows(self):
+    def refactor_flows_and_labels(self):
         for fst_id, snd_id in self.cfg.edges:
-            self.cfg.flows[fst_id].add(snd_id)
+            self.cfg.flows.add((fst_id, snd_id))
+            self.cfg.labels.add(fst_id)
+            self.cfg.labels.add(snd_id)
 
     def combine_conditions(self, node_list: List[ast.expr]) -> ast.expr:
         return (
