@@ -310,13 +310,19 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         # We only display fields in classes.
+        add_stmt(self.curr_block, node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_FuncCFG(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        add_stmt(self.curr_block, node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_AsyncFuncCFG(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # add_stmt(self.curr_block, node)
+        add_stmt(self.curr_block, node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_ClassCFG(node)
 
     def visit_Return(self, node: ast.Return) -> None:
