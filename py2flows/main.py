@@ -28,6 +28,8 @@ def main():
     parser.add_argument('-iso', '--isolation',
                         help='If specified, each function will have isolated entries and exits',
                         action='store_true')
+    parser.add_argument('--asserts', help='Desugar asserts', action='store_true')
+    parser.add_argument('--fors', help='Desugar fors', action='store_true')
     parser.add_argument('-f', '--format', default='png',
                         help='Specify the format of output graph. Basically three formats: png(default), svg and pdf')
     parser.add_argument('-p', '--path', default='./',
@@ -36,7 +38,7 @@ def main():
                         help='Specify the name of the output file. The default is output')
     args = parser.parse_args()
     logging.debug(args.file_name)
-    logging.debug(args.isolation)
+    logging.debug('{} {} {}'.format(args.isolation, args.asserts, args.fors))
 
     file = open(args.file_name, "r", encoding='utf-8')
     source = file.read()
@@ -45,7 +47,7 @@ def main():
     comments_cleaner = comments.CommentsCleaner(source)
     logging.debug(comments_cleaner.source)
 
-    visitor = flows.CFGVisitor(args.isolation)
+    visitor = flows.CFGVisitor(args.isolation, args.asserts, args.fors)
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
     logging.debug('Refactored edges: %s', sorted(cfg.edges.keys()))

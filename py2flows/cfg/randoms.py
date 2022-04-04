@@ -34,3 +34,12 @@ class RandomUnusedName:
     @classmethod
     def gen_unused_name(cls) -> str:
         return cls.prefix
+
+
+class RandomIterable:
+    counter = 0
+    prefix = '_tmp_iter_'
+
+    @classmethod
+    def gen_iter(cls) -> str:
+        return cls.prefix + str(cls.counter)
