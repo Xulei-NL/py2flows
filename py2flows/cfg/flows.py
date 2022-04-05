@@ -440,7 +440,12 @@ class CFGVisitor(ast.NodeVisitor):
 
             new_while.body.append(new_try)
             new_while.body.extend(node.body)
-            self.populate_body([new_assign, new_while])
+
+            new_del: ast.Delete = ast.Delete([
+                ast.Name(id=new_iter, ctx=ast.Del())
+            ])
+
+            self.populate_body([new_assign, new_while, new_del])
         else:
             iter_sequence = self.visit(node.iter)
             node.iter = iter_sequence[-1]
