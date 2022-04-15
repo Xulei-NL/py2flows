@@ -1,6 +1,7 @@
-import autopep8
-import tokenize
 import io
+import tokenize
+
+import autopep8
 
 
 class CommentsCleaner:
@@ -35,7 +36,7 @@ class CommentsCleaner:
             if start_line > last_lineno:
                 last_col = 0
             if start_col > last_col:
-                out += (" " * (start_col - last_col))
+                out += " " * (start_col - last_col)
             # Remove comments:
             if token_type == tokenize.COMMENT:
                 pass

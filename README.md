@@ -2,10 +2,7 @@
 
 A control flow generator for Python that is able to generate control flow graphs and corresponding flows. The motivation
 behind this project is to generate flows suitable for data flow analysis for Python. In my plan, an instance of
-a [dynamic monotone framework](https://github.com/LayneInNL/dmf) are going to be implemented upon it.
-
-**Caveat:** This project is still under development. It's better to use a release version which will be available very
-soon. :)
+a [dynamic monotone framework](https://github.com/LayneInNL/dmf) is going to be implemented upon it.
 
 ## Supported language versions
 
@@ -98,6 +95,7 @@ Support for other statements and expressions will be added gradually.
 - [x] Prune temporal variables
 - [x] Use two labels to denote call and return of each function call
 - [x] Understandable CFGs generated
+- [x] Use one return to denote all returns in functions
 
 ### What can be better
 
