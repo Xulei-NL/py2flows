@@ -472,7 +472,32 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.inter_flows.add((call_label, None, None, return_label))
         self.cfg.fake_flows.add((call_label, return_label))
 
+    def transform_boolop_assign(self, node: ast.Assign) -> List:
+        right_value: ast.BoolOp = node.value
+        assign_list = [
+            ast.Assign(targets=node.targets, value=value)
+            for value in right_value.values
+        ]
+        current_sequence = assign_list[-1:]
+        for assign in reversed(assign_list[:-1]):
+            tmp_if = ast.If(
+                test=assign.value
+                if isinstance(right_value.op, ast.And)
+                else ast.UnaryOp(op=ast.Not(), operand=assign.value),
+                body=current_sequence,
+                orelse=[],
+            )
+            current_sequence = [assign, tmp_if]
+
+        return current_sequence
+
     def visit_Assign(self, node: ast.Assign) -> None:
+        # deal with bool op, https://snarky.ca/unravelling-boolean-operations/
+        if isinstance(node.value, ast.BoolOp):
+            new_sequence = self.transform_boolop_assign(node)
+            self.populate_body(new_sequence)
+            return
+
         new_expr_sequence = self.visit(node.value)
 
         if len(new_expr_sequence) == 1:
@@ -504,7 +529,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
         new_sequence: List = new_expr_sequence[:-1] + [new_assign]
-        if type(node.value) in [ast.ListComp, ast.SetComp, ast.DictComp]:
+        if isinstance(node.value, (ast.ListComp, ast.SetComp, ast.DictComp)):
             new_sequence.append(
                 ast.Delete(
                     targets=[ast.Name(id=new_expr_sequence[-1].id, ctx=ast.Del())]
@@ -708,7 +733,6 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_guard_stack.pop()
 
     def visit_If(self, node: ast.If) -> None:
-
         test_sequence = self.visit(node.test)
         node.test = test_sequence[-1]
         self.populate_body(test_sequence[:-1])
@@ -945,7 +969,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_arg_list = []
 
         for expr in expr_list:
-            if type(expr) not in BASIC_TYPES:
+            if not isinstance(expr, BASIC_TYPES):
                 tmp_name = self.decompose_expr(expr, new_expr_sequence)
                 new_arg_list.append(tmp_name)
             else:
@@ -956,12 +980,16 @@ class CFGVisitor(ast.NodeVisitor):
     ################################################################
     ################################################################
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
-        new_expr_sequence = []
+        new_var: str = randoms.RandomVariableName.gen_random_name()
+        new_assign = ast.Assign(
+            targets=[ast.Name(id=new_var, ctx=ast.Store())], value=node
+        )
+        new_name: ast.Name = ast.Name(
+            id=new_var,
+            ctx=ast.Load(),
+        )
 
-        new_arg_list = self.decompose_expr_list(node.values, new_expr_sequence)
-
-        node.values = new_arg_list
-        return new_expr_sequence + [node]
+        return [new_assign, new_name]
 
     def visit_BinOp(self, node: ast.BinOp) -> Any:
         new_expr_sequence = []
@@ -976,7 +1004,7 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
         new_expr_sequence = []
         expr = node.operand
-        if type(expr) not in BASIC_TYPES:
+        if not isinstance(expr, BASIC_TYPES):
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.operand = tmp_name
 
