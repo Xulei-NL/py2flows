@@ -1023,28 +1023,16 @@ class CFGVisitor(ast.NodeVisitor):
 
         return [tmp_function_def, tmp_function_name]
 
-    # def _visit_IfExp(self, node: ast.IfExp) -> List[ast.If]:
-    #     return [
-    #         ast.If(
-    #             test=node.test,
-    #             body=self._visit_IfExp(node.body)
-    #             if type(node.body) == ast.IfExp
-    #             else [ast.Return(value=node.body)],
-    #             orelse=self._visit_IfExp(node.orelse)
-    #             if type(node.orelse) == ast.IfExp
-    #             else [ast.Return(value=node.orelse)],
-    #         )
-    #     ]
-
     def visit_IfExp(self, node: ast.IfExp) -> Any:
-        new_expr_sequence = []
-
-        new_arg_list = self.decompose_expr_list(
-            [node.test, node.body, node.orelse], new_expr_sequence
+        tmp_var: str = randoms.RandomVariableName.gen_random_name()
+        tmp_name: ast.Name = ast.Name(id=tmp_var, ctx=ast.Store())
+        new_if: ast.If = ast.If(
+            test=node.test,
+            body=[ast.Assign(targets=[tmp_name], value=node.body)],
+            orelse=[ast.Assign(targets=[tmp_name], value=node.orelse)],
         )
 
-        node.test, node.body, node.orelse = new_arg_list
-        return new_expr_sequence + [node]
+        return [new_if, tmp_name]
 
     def visit_Dict(self, node: ast.Dict) -> Any:
         return [node]
@@ -1246,18 +1234,6 @@ class CFGVisitor(ast.NodeVisitor):
                 func=ast.Name(id=generator_var, ctx=ast.Load()), args=[], keywords=[]
             )
         )
-        # tmp_var = randoms.RandomVariableName.gen_random_name()
-        # new_expr_sequence.append(
-        #     ast.Assign(
-        #         targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-        #         value=ast.Call(
-        #             func=ast.Name(id=generator_var, ctx=ast.Load()),
-        #             args=[],
-        #             keywords=[]
-        #         )
-        #     )
-        # )
-        # new_expr_sequence.append(ast.Name(id=tmp_var, ctx=ast.Load()))
         return new_expr_sequence
 
     def _visit_GeneratorExp(self, elt: ast.expr, generators: List[ast.comprehension]):
