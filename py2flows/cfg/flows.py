@@ -211,6 +211,8 @@ class CFGVisitor(ast.NodeVisitor):
         isolation: bool = False,
         trans_assert: bool = False,
         trans_for: bool = False,
+        is_func: bool = False,
+        is_class: bool = False,
     ):
         super().__init__()
         self.cfg: Optional[CFG] = None
@@ -219,15 +221,15 @@ class CFGVisitor(ast.NodeVisitor):
         self.isolation = isolation
         self.trans_assert = trans_assert
         self.trans_for = trans_for
+        self.is_func = is_func
+        self.is_class = is_class
         self.after_loop_stack: List[BasicBlock] = []
         self.loop_guard_stack: List[BasicBlock] = []
         self.raise_except_stack: List[BasicBlock] = []
         self.raise_final_stack: List[BasicBlock] = []
 
-    def build(
-        self, name: str, tree: ast.Module, is_func: bool = False, is_class: bool = False
-    ) -> CFG:
-        self.cfg = CFG(name, is_func, is_class)
+    def build(self, name: str, tree: ast.Module) -> CFG:
+        self.cfg = CFG(name, self.is_func, self.is_class)
         self.curr_block = self.new_block()
         self.visit(tree)
         self.remove_empty_blocks(self.cfg.start)
@@ -271,10 +273,8 @@ class CFGVisitor(ast.NodeVisitor):
             arg_list.append((tmp_arg_list[index], default))
             index += 1
 
-        visitor: CFGVisitor = CFGVisitor(self.isolation)
-        func_cfg: CFG = visitor.build(
-            tree.name, ast.Module(body=tree.body), is_func=True, is_class=False
-        )
+        visitor: CFGVisitor = CFGVisitor(self.isolation, is_func=True, is_class=False)
+        func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
         self.cfg.func_cfgs[tree.name] = (arg_list, func_cfg)
 
     def add_AsyncFuncCFG(self, tree: ast.FunctionDef) -> None:
@@ -302,10 +302,8 @@ class CFGVisitor(ast.NodeVisitor):
 
     def add_ClassCFG(self, node: ast.ClassDef):
         class_body: ast.Module = ast.Module(body=node.body)
-        visitor: CFGVisitor = CFGVisitor(self.isolation)
-        class_cfg: CFG = visitor.build(
-            node.name, class_body, is_func=False, is_class=True
-        )
+        visitor: CFGVisitor = CFGVisitor(self.isolation, is_func=False, is_class=True)
+        class_cfg: CFG = visitor.build(node.name, class_body)
         print(class_cfg.start_block.bid, class_cfg.final_block.bid)
         self.cfg.class_cfgs[node.name] = class_cfg
 
@@ -554,7 +552,7 @@ class CFGVisitor(ast.NodeVisitor):
             logging.debug("AnnAssign without value. Just ignore it")
 
     def visit_For(self, node: ast.For) -> None:
-        if self.trans_for:
+        if False:
             new_iter: str = randoms.RandomIterable.gen_iter()
             new_assign: ast.Assign = ast.Assign(
                 targets=[ast.Name(id=new_iter, ctx=ast.Store())],
@@ -614,10 +612,53 @@ class CFGVisitor(ast.NodeVisitor):
             new_del: ast.Delete = ast.Delete([ast.Name(id=new_iter, ctx=ast.Del())])
 
             self.populate_body([new_assign, new_while, new_del])
+        elif self.trans_for:
+            new_call: ast.Call = ast.Call(
+                args=[node.iter], func=ast.Name(id="list", ctx=ast.Load()), keywords=[]
+            )
+            iter_sequence: List = self.visit(new_call)
+
+            new_var = randoms.RandomVariableName.gen_random_name()
+            new_assign = ast.Assign(
+                targets=[ast.Name(id=new_var, ctx=ast.Store())],
+                value=iter_sequence[-1],
+            )
+            new_name = ast.Name(id=new_var, ctx=ast.Load())
+
+            iter_sequence = iter_sequence[:-1] + [new_assign]
+            # self.populate_body(iter_sequence[:-1])
+
+            new_while: ast.While = ast.While(
+                test=new_name,
+                body=[
+                    ast.Assign(
+                        targets=[node.target],
+                        value=ast.Subscript(
+                            value=new_name,
+                            slice=ast.Num(n=0),
+                            ctx=ast.Load(),
+                        ),
+                    )
+                ]
+                + node.body
+                + [
+                    ast.Assign(
+                        targets=[new_name],
+                        value=ast.Subscript(
+                            value=new_name,
+                            slice=ast.Slice(lower=ast.Num(n=1), upper=None, step=None),
+                            ctx=ast.Load(),
+                        ),
+                    )
+                ],
+                orelse=node.orelse,
+            )
+            iter_sequence.append(new_while)
+            self.populate_body(iter_sequence)
         else:
             iter_sequence = self.visit(node.iter)
-            node.iter = iter_sequence[-1]
             self.populate_body(iter_sequence[:-1])
+            node.iter = iter_sequence[-1]
 
             loop_guard = self.add_loop_block()
             self.curr_block = loop_guard
