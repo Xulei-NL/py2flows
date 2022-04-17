@@ -952,9 +952,12 @@ class CFGVisitor(ast.NodeVisitor):
     # We care about these basic types since we need some criterion to stop recursion of expanding expressions.
     #
 
+    # decompose a single expression.
+    # new_expr_sequence stores a list of temporal statements
+
     def decompose_expr(self, expr: ast.expr, new_expr_sequence):
         decomposed_expr = self.visit(expr)
-        new_expr_sequence += decomposed_expr[:-1]
+        new_expr_sequence.extend(decomposed_expr[:-1])
         tmp_var = randoms.RandomVariableName.gen_random_name()
         new_expr_sequence.append(
             ast.Assign(
@@ -1267,7 +1270,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
 
         expr = node.value
-        if type(expr) not in BASIC_TYPES:
+        if not isinstance(expr, BASIC_TYPES):
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1280,7 +1283,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
 
         expr = node.value
-        if type(expr) not in BASIC_TYPES:
+        if not isinstance(expr, BASIC_TYPES):
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1290,7 +1293,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
 
         expr = node.value
-        if type(expr) not in BASIC_TYPES:
+        if not isinstance(expr, BASIC_TYPES):
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1300,7 +1303,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         new_arg_list = []
         for expr in [node.left] + node.comparators:
-            if type(expr) not in BASIC_TYPES:
+            if not isinstance(expr, BASIC_TYPES):
                 tmp_name = self.decompose_expr(expr, new_expr_sequence)
                 new_arg_list.append(tmp_name)
             else:
@@ -1318,7 +1321,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         new_arg_list = []
         for expr in node.args:
-            if type(expr) not in BASIC_TYPES:
+            if not isinstance(expr, BASIC_TYPES):
                 tmp_name = self.decompose_expr(expr, new_expr_sequence)
                 new_arg_list.append(tmp_name)
             else:
@@ -1355,7 +1358,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         expr = node.value
 
-        if type(expr) not in BASIC_TYPES:
+        if not isinstance(expr, BASIC_TYPES):
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1365,7 +1368,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         expr = node.value
 
-        if type(expr) not in BASIC_TYPES:
+        if not isinstance(expr, BASIC_TYPES):
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
@@ -1375,7 +1378,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = []
         expr = node.value
 
-        if type(expr) not in BASIC_TYPES:
+        if not isinstance(expr, BASIC_TYPES):
             tmp_name = self.decompose_expr(expr, new_expr_sequence)
             node.value = tmp_name
 
