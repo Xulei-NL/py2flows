@@ -313,7 +313,6 @@ class CFGVisitor(ast.NodeVisitor):
         class_body: ast.Module = ast.Module(body=node.body)
         visitor: CFGVisitor = CFGVisitor(self.isolation, is_func=False, is_class=True)
         class_cfg: CFG = visitor.build(node.name, class_body)
-        print(class_cfg.start_block.bid, class_cfg.final_block.bid)
         self.cfg.class_cfgs[name_id_pair] = class_cfg
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
@@ -425,8 +424,8 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # add_stmt(self.curr_block, node)
         add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.add_ClassCFG(node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Return(self, node: ast.Return) -> None:
         if self.cfg.is_func:
