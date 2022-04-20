@@ -169,7 +169,13 @@ class CFG:
                     if call_id == block.bid:
                         additional += "Call the function"
                     if exit_return_id == block.bid:
-                        additional += "Exit and return the function"
+                        additional += "Return from the function"
+            elif isinstance(self.blocks[block.bid].stmt[0], ast.ClassDef):
+                for call_id, _, _, exit_return_id in self.inter_flows:
+                    if call_id == block.bid:
+                        additional += "Enter into the class"
+                    if exit_return_id == block.bid:
+                        additional += "Return from the class"
             self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for next_bid in block.next:
                 self._traverse(self.blocks[next_bid], visited)
@@ -423,9 +429,14 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # add_stmt(self.curr_block, node)
-        add_stmt(self.curr_block, node)
+        call_block = self.curr_block
+        add_stmt(call_block, node)
         self.add_ClassCFG(node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        return_block = self.new_block()
+        add_stmt(return_block, node)
+        self.add_inter_flows(call_block.bid, return_block.bid)
+        self.add_edge(call_block.bid, return_block.bid)
+        self.curr_block = return_block
 
     def visit_Return(self, node: ast.Return) -> None:
         if self.cfg.is_func:
