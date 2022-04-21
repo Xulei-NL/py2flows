@@ -437,6 +437,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.add_inter_flows(call_block.bid, return_block.bid)
         self.add_edge(call_block.bid, return_block.bid)
         self.curr_block = return_block
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Return(self, node: ast.Return) -> None:
         if self.cfg.is_func:
