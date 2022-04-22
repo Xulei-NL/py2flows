@@ -520,7 +520,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         if len(new_expr_sequence) == 1:
             # extracts variables from assignments to self.cfg.vars
-            self.extract_vars(node.targets)
+            # self.extract_vars(node.targets)
 
             if isinstance(node.value, ast.Call):
 
@@ -541,9 +541,18 @@ class CFGVisitor(ast.NodeVisitor):
 
                 self.curr_block = return_block
 
-            add_stmt(self.curr_block, node)
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-            return
+            if len(node.targets) > 1:
+                expr_sequence = []
+                for target in reversed(node.targets):
+                    expr_sequence.append(ast.Assign(targets=[target], value=node.value))
+                self.populate_body(expr_sequence)
+                return
+            else:
+                add_stmt(self.curr_block, node)
+                self.curr_block = self.add_edge(
+                    self.curr_block.bid, self.new_block().bid
+                )
+                return
 
         new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
         new_sequence: List = new_expr_sequence[:-1] + [new_assign]
