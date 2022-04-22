@@ -188,15 +188,13 @@ class CFG:
                 )
 
     def generate(self, fmt: str, name: str) -> gv.dot.Digraph:
-        self.graph = gv.Digraph(name="cluster_" + self.name, format=fmt)
+        self.graph = gv.Digraph(name="cluster_" + str(self.start_block.bid), format=fmt)
         self.graph.attr(label=name)
         self._traverse(self.start)
         for (func_name, func_label), funcCFG in self.func_cfgs.items():
             self.graph.subgraph(
                 funcCFG[1].generate(fmt, func_name + " at label {}".format(func_label))
             )
-        for (func_name, func_label), funcCFG in self.async_func_cfgs.items():
-            self.graph.subgraph(funcCFG[1].generate(fmt, func_name))
         for (class_name, class_label), classCFG in self.class_cfgs.items():
             self.graph.subgraph(
                 classCFG.generate(fmt, class_name + " at label {}".format(class_label))
@@ -266,7 +264,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def add_FuncCFG(self, tree: ast.FunctionDef) -> None:
         name_id_pair = (tree.name, self.curr_block.bid)
-
+        print(name_id_pair)
         arg_list: List[(str, Optional[ast.AST])] = []
 
         tmp_arg_list: List[str] = []

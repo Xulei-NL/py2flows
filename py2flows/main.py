@@ -83,7 +83,7 @@ def main():
     comments_cleaner = comments.CommentsCleaner(source)
     logging.debug(comments_cleaner.source)
 
-    visitor = flows.CFGVisitor(args.isolation, args.asserts, args.fors)
+    visitor = flows.CFGVisitor(True, True, True)
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
     logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
