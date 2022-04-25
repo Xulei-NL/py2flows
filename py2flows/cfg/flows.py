@@ -142,12 +142,12 @@ class CFG:
         # does the function have return labels?
         self.has_return: bool = False
         # Function name to (Args, CFG)
-        self.func_cfgs: Dict[Tuple[str, int], (List[str, ast.AST], CFG)] = {}
         self.async_func_cfgs: Dict[Tuple[str, int], (List[str, ast.AST], CFG)] = {}
 
         # deal with classes
         self.is_class: bool = is_class
-        self.class_cfgs: Dict[Tuple[str, int], CFG] = {}
+
+        self.sub_cfgs: Dict[int, CFG] = {}
 
         self.blocks: Dict[int, BasicBlock] = {}
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
@@ -191,13 +191,9 @@ class CFG:
         self.graph = gv.Digraph(name="cluster_" + str(self.start_block.bid), format=fmt)
         self.graph.attr(label=name)
         self._traverse(self.start)
-        for (func_name, func_label), funcCFG in self.func_cfgs.items():
+        for func_label, funcCFG in self.sub_cfgs.items():
             self.graph.subgraph(
-                funcCFG[1].generate(fmt, func_name + " at label {}".format(func_label))
-            )
-        for (class_name, class_label), classCFG in self.class_cfgs.items():
-            self.graph.subgraph(
-                classCFG.generate(fmt, class_name + " at label {}".format(class_label))
+                funcCFG.generate(fmt, "CFG at label {}".format(func_label))
             )
         return self.graph
 
@@ -263,8 +259,7 @@ class CFGVisitor(ast.NodeVisitor):
             self.add_edge(self.curr_block.bid, loop_block.bid)
 
     def add_FuncCFG(self, tree: ast.FunctionDef) -> None:
-        name_id_pair = (tree.name, self.curr_block.bid)
-        print(name_id_pair)
+        func_id = self.curr_block.bid
         arg_list: List[(str, Optional[ast.AST])] = []
 
         tmp_arg_list: List[str] = []
@@ -285,7 +280,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         visitor: CFGVisitor = CFGVisitor(self.isolation, is_func=True, is_class=False)
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
-        self.cfg.func_cfgs[name_id_pair] = (arg_list, func_cfg)
+        self.cfg.sub_cfgs[func_id] = func_cfg
 
     def add_AsyncFuncCFG(self, tree: ast.FunctionDef) -> None:
         name_id_pair = (tree.name, self.curr_block.bid)
@@ -313,11 +308,11 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.async_func_cfgs[name_id_pair] = (arg_list, func_cfg)
 
     def add_ClassCFG(self, node: ast.ClassDef):
-        name_id_pair = (node.name, self.curr_block.bid)
+        class_id = self.curr_block.bid
         class_body: ast.Module = ast.Module(body=node.body)
         visitor: CFGVisitor = CFGVisitor(self.isolation, is_func=False, is_class=True)
         class_cfg: CFG = visitor.build(node.name, class_body)
-        self.cfg.class_cfgs[name_id_pair] = class_cfg
+        self.cfg.sub_cfgs[class_id] = class_cfg
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
