@@ -24,14 +24,16 @@ def construct_CFG(file_name) -> flows.CFG:
     with open(file_name) as handler:
         source = handler.read()
         comments_cleaner = comments.CommentsCleaner(source)
-        visitor = flows.CFGVisitor(isolation=True, trans_for=True, trans_assert=True)
+        visitor = flows.CFGVisitor()
         base_name = os.path.basename(file_name)
         cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
         logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
         logging.debug("Refactored labels: {}".format(visitor.cfg.labels))
         logging.debug("Refactored fake flows: {}".format(visitor.cfg.fake_flows))
         logging.debug("Refactored flows: {}".format(visitor.cfg.flows))
-        logging.debug("Refactored inter flows: {}".format(visitor.cfg.inter_flows))
+        logging.debug(
+            "Refactored inter flows: {}".format(visitor.cfg.call_return_flows)
+        )
         logging.debug("All variables: {}".format(visitor.cfg.vars))
         cfg.show()
 
@@ -83,14 +85,14 @@ def main():
     comments_cleaner = comments.CommentsCleaner(source)
     logging.debug(comments_cleaner.source)
 
-    visitor = flows.CFGVisitor(True, True, True)
+    visitor = flows.CFGVisitor()
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
     logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
     logging.debug("Refactored labels: {}".format(visitor.cfg.labels))
     logging.debug("Refactored fake flows: {}".format(visitor.cfg.fake_flows))
     logging.debug("Refactored flows: {}".format(visitor.cfg.flows))
-    logging.debug("Refactored inter flows: {}".format(visitor.cfg.inter_flows))
+    logging.debug("Refactored inter flows: {}".format(visitor.cfg.call_return_flows))
     logging.debug("All variables: {}".format(visitor.cfg.vars))
     cfg.show(fmt=args.format, filepath=args.path + "/" + args.name, name=base_name)
 
