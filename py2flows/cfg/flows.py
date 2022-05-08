@@ -185,6 +185,7 @@ class CFGVisitor(ast.NodeVisitor):
         parent_node=ast.Pass(),
         has_return: bool = False,
         return_name=None,
+        initial=False,
     ):
         super().__init__()
         self.cfg: Optional[CFG] = None
@@ -193,6 +194,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.parent_node = parent_node
         self.has_return = has_return
         self.return_name = return_name
+        self.initial = initial
         self.after_loop_stack: List[BasicBlock] = []
         self.loop_guard_stack: List[BasicBlock] = []
         self.raise_except_stack: List[BasicBlock] = []
@@ -315,7 +317,10 @@ class CFGVisitor(ast.NodeVisitor):
 
         # post structure cleaning
         self.add_edge(self.curr_block.bid, self.cfg.final_block.bid)
-        if self.has_return:
+        if self.initial:
+            print("eeeee")
+            add_stmt(self.cfg.final_block, ast.Pass())
+        elif self.has_return:
             return_node = ast.Return(
                 value=ast.Name(id=self.return_name, ctx=ast.Load())
             )

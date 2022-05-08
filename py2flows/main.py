@@ -24,7 +24,7 @@ def construct_CFG(file_name) -> flows.CFG:
     with open(file_name) as handler:
         source = handler.read()
         comments_cleaner = comments.CommentsCleaner(source)
-        visitor = flows.CFGVisitor()
+        visitor = flows.CFGVisitor(initial=True)
         base_name = os.path.basename(file_name)
         cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
         logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
@@ -85,7 +85,7 @@ def main():
     comments_cleaner = comments.CommentsCleaner(source)
     logging.debug(comments_cleaner.source)
 
-    visitor = flows.CFGVisitor()
+    visitor = flows.CFGVisitor(initial=True)
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
     logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
