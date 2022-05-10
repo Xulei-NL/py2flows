@@ -60,27 +60,23 @@ class BasicBlock(object):
 
     def stmt_to_code(self) -> str:
         code = str(self.bid) + "\n"
-        if self.stmt and type(self.stmt[0]) == ast.Module:
-            code += "Module"
-            return code
         for stmt in self.stmt:
             line = astor.to_source(stmt)
             code += (
                 line.split("\n")[0] + "\n"
-                if type(stmt)
-                in [
-                    ast.If,
-                    ast.For,
-                    ast.Try,
-                    ast.While,
-                    ast.With,
-                    ast.AsyncWith,
-                    ast.AsyncFor,
-                    ast.FunctionDef,
-                    ast.AsyncFunctionDef,
-                    ast.ClassDef,
-                    ast.excepthandler,
-                ]
+                if isinstance(
+                    stmt,
+                    (
+                        ast.If,
+                        ast.For,
+                        ast.Try,
+                        ast.While,
+                        ast.With,
+                        ast.FunctionDef,
+                        ast.ClassDef,
+                        ast.excepthandler,
+                    ),
+                )
                 else line
             )
         return code
@@ -96,15 +92,9 @@ def add_stmt(block: BasicBlock, stmt) -> None:
 class CFG:
     def __init__(self, name: str):
         self.name: str = name
-
         self.start_block: Optional[BasicBlock] = None
         self.final_block: Optional[BasicBlock] = None
-
-        self.async_func_cfgs: Dict[Tuple[str, int], CFG] = {}
-
-        # deal with classes
         self.sub_cfgs: Dict[int, CFG] = {}
-
         self.blocks: Dict[int, BasicBlock] = {}
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
@@ -115,19 +105,17 @@ class CFG:
         if block.bid not in visited:
             visited.add(block.bid)
             additional = ""
-            if isinstance(self.blocks[block.bid].stmt[0], ast.Assign) and isinstance(
-                self.blocks[block.bid].stmt[0].value, ast.Call
-            ):
-                for call_id, exit_return_id in self.call_return_flows:
-                    if call_id == block.bid:
+            curr_stmt = self.blocks[block.bid].stmt[0]
+            for call_id, return_id in self.call_return_flows:
+                if call_id == block.bid:
+                    if isinstance(curr_stmt, ast.Call):
                         additional += "Call the function"
-                    if exit_return_id == block.bid:
-                        additional += "Return from the function"
-            elif isinstance(self.blocks[block.bid].stmt[0], ast.ClassDef):
-                for call_id, exit_return_id in self.call_return_flows:
-                    if call_id == block.bid:
+                    elif isinstance(curr_stmt, ast.ClassDef):
                         additional += "Enter into the class"
-                    if exit_return_id == block.bid:
+                elif return_id == block.bid:
+                    if isinstance(curr_stmt, ast.Name):
+                        additional += "Return from the function"
+                    elif isinstance(curr_stmt, ast.ClassDef):
                         additional += "Return from the class"
             self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for next_bid in block.next:
@@ -376,27 +364,25 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = self.visit(node.value)
 
         if len(new_expr_sequence) == 1:
-            # extracts variables from assignments to self.cfg.vars
-            # self.extract_vars(node.targets)
-
             if isinstance(node.value, ast.Call):
-                add_stmt(self.curr_block, node)
+                add_stmt(self.curr_block, node.value)
                 return_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
                 self.add_call_return_flows(self.curr_block.bid, return_block.bid)
                 self.curr_block = return_block
-
-            if len(node.targets) > 1:
-                expr_sequence = [
-                    ast.Assign(targets=[target], value=node.value)
-                    for target in reversed(node.targets)
-                ]
-                self.populate_body(expr_sequence)
-                return
+                add_stmt(self.curr_block, node.targets[-1])
             else:
                 add_stmt(self.curr_block, node)
-                self.curr_block = self.add_edge(
-                    self.curr_block.bid, self.new_block().bid
-                )
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+            if len(node.targets) > 1:
+                expr_sequence = []
+                for idx, target in enumerate(node.targets[:-1]):
+                    expr_sequence.append(
+                        ast.Assign(targets=[target], value=node.targets[idx + 1])
+                    )
+                self.populate_body(reversed(expr_sequence))
+                return
+            else:
                 return
 
         new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
@@ -408,7 +394,6 @@ class CFGVisitor(ast.NodeVisitor):
                 )
             )
         self.populate_body(new_sequence)
-        return
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         add_stmt(self.curr_block, node)
