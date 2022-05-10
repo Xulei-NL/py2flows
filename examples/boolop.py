@@ -1,6 +1,6 @@
-# a and b
+# a and b() + 1
 # x = a and b and c
-x = (m and n) or (c and d)
+# x = (m and n) or (c and d)
 # c = a or b
 # d = a or b or c
 # a = m or n

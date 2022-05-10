@@ -15,7 +15,7 @@
 
 class RandomVariableName:
     counter = 0
-    prefix = "_tmp_var_"
+    prefix = "0_var_"
 
     @classmethod
     def gen_random_name(cls) -> str:

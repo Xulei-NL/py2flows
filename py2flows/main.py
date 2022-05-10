@@ -28,7 +28,6 @@ def construct_CFG(file_name) -> flows.CFG:
         base_name = os.path.basename(file_name)
         cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
         logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
-        logging.debug("Refactored fake flows: {}".format(visitor.cfg.fake_flows))
         logging.debug("Refactored flows: {}".format(visitor.cfg.flows))
         logging.debug(
             "Refactored inter flows: {}".format(visitor.cfg.call_return_flows)
@@ -77,7 +76,6 @@ def main():
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
     logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
-    logging.debug("Refactored fake flows: {}".format(visitor.cfg.fake_flows))
     logging.debug("Refactored flows: {}".format(visitor.cfg.flows))
     logging.debug("Refactored inter flows: {}".format(visitor.cfg.call_return_flows))
     cfg.show(fmt=args.format, filepath=args.path + "/" + args.name, name=base_name)
