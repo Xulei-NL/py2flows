@@ -178,20 +178,18 @@ class CFG:
 class CFGVisitor(ast.NodeVisitor):
     def __init__(
         self,
-        rem_parent: bool = False,
         parent_node=ast.Pass(),
         has_return: bool = False,
         return_name=None,
-        initial=False,
+        not_in_function=False,
     ):
         super().__init__()
         self.cfg: Optional[CFG] = None
         self.curr_block: Optional[BasicBlock] = None
-        self.rem_parent = rem_parent
         self.parent_node = parent_node
         self.has_return = has_return
         self.return_name = return_name
-        self.initial = initial
+        self.initial = not_in_function
         self.after_loop_stack: List[BasicBlock] = []
         self.loop_guard_stack: List[BasicBlock] = []
         self.raise_except_stack: List[BasicBlock] = []
@@ -226,7 +224,6 @@ class CFGVisitor(ast.NodeVisitor):
     def add_FuncCFG(self, tree: ast.FunctionDef) -> None:
         func_id = self.curr_block.bid
         visitor: CFGVisitor = CFGVisitor(
-            rem_parent=True,
             parent_node=self.curr_block.stmt[0],
         )
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
@@ -241,9 +238,7 @@ class CFGVisitor(ast.NodeVisitor):
     def add_ClassCFG(self, node: ast.ClassDef):
         class_id = self.curr_block.bid
         class_body: ast.Module = ast.Module(body=node.body)
-        visitor: CFGVisitor = CFGVisitor(
-            rem_parent=True,
-        )
+        visitor: CFGVisitor = CFGVisitor(not_in_function=True)
         class_cfg: CFG = visitor.build(node.name, class_body)
         self.cfg.sub_cfgs[class_id] = class_cfg
 
