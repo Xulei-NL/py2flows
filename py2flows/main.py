@@ -28,13 +28,11 @@ def construct_CFG(file_name) -> flows.CFG:
         base_name = os.path.basename(file_name)
         cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
         logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
-        logging.debug("Refactored labels: {}".format(visitor.cfg.labels))
         logging.debug("Refactored fake flows: {}".format(visitor.cfg.fake_flows))
         logging.debug("Refactored flows: {}".format(visitor.cfg.flows))
         logging.debug(
             "Refactored inter flows: {}".format(visitor.cfg.call_return_flows)
         )
-        logging.debug("All variables: {}".format(visitor.cfg.vars))
         cfg.show()
 
         return cfg
@@ -48,14 +46,6 @@ def main():
         "But of course you can use it to examine cfgs only"
     )
     parser.add_argument("file_name", help="path to the Python file")
-    parser.add_argument(
-        "-iso",
-        "--isolation",
-        help="If specified, each function will have isolated entries and exits",
-        action="store_true",
-    )
-    parser.add_argument("--asserts", help="Desugar asserts", action="store_true")
-    parser.add_argument("--fors", help="Desugar fors", action="store_true")
     parser.add_argument(
         "-f",
         "--format",
@@ -76,8 +66,6 @@ def main():
     )
     args = parser.parse_args()
     logging.debug(args.file_name)
-    logging.debug("{} {} {}".format(args.isolation, args.asserts, args.fors))
-
     file = open(args.file_name, "r", encoding="utf-8")
     source = file.read()
     file.close()
@@ -89,11 +77,9 @@ def main():
     base_name = os.path.basename(args.file_name)
     cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
     logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
-    logging.debug("Refactored labels: {}".format(visitor.cfg.labels))
     logging.debug("Refactored fake flows: {}".format(visitor.cfg.fake_flows))
     logging.debug("Refactored flows: {}".format(visitor.cfg.flows))
     logging.debug("Refactored inter flows: {}".format(visitor.cfg.call_return_flows))
-    logging.debug("All variables: {}".format(visitor.cfg.vars))
     cfg.show(fmt=args.format, filepath=args.path + "/" + args.name, name=base_name)
 
 

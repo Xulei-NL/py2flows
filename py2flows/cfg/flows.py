@@ -121,11 +121,8 @@ class CFG:
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
         self.flows: Set[Tuple[int, int]] = set()
-        self.labels: Set[int] = set()
         self.fake_flows: Set[Tuple[int, int]] = set()
         self.call_return_flows: Set[Tuple[int, int]] = set()
-        self.entry_exit_flows: Set[Tuple[int, int]] = set()
-        self.vars: Set[str] = set()
 
     def _traverse(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -279,10 +276,6 @@ class CFGVisitor(ast.NodeVisitor):
 
         self.cfg.flows -= self.cfg.fake_flows
 
-        for fst_label, snd_label in self.cfg.flows:
-            self.cfg.labels.add(fst_label)
-            self.cfg.labels.add(snd_label)
-
     def combine_conditions(self, node_list: List[ast.expr]) -> ast.expr:
         return (
             node_list[0]
@@ -318,7 +311,6 @@ class CFGVisitor(ast.NodeVisitor):
         # post structure cleaning
         self.add_edge(self.curr_block.bid, self.cfg.final_block.bid)
         if self.initial:
-            print("eeeee")
             add_stmt(self.cfg.final_block, ast.Pass())
         elif self.has_return:
             return_node = ast.Return(
@@ -392,20 +384,6 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Delete(self, node: ast.Delete) -> None:
         add_stmt(self.curr_block, node)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-
-    def extract_var(self, target: ast.expr):
-        if isinstance(target, ast.Name):
-            self.cfg.vars.add(target.id)
-            return
-        elif isinstance(target, (ast.Attribute, ast.Subscript, ast.Starred)):
-            self.extract_var(target.value)
-            return
-        else:
-            assert False
-
-    def extract_vars(self, targets: List[ast.expr]):
-        for target in targets:
-            self.extract_var(target)
 
     def add_call_return_flows(self, call_label: int, return_label: int):
         # exit label is return label in each function.
