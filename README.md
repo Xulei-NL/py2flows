@@ -4,6 +4,12 @@ A control flow generator for Python that is able to generate control flow graphs
 behind this project is to generate flows suitable for data flow analysis for Python. In my plan, an instance of
 a [dynamic monotone framework](https://github.com/LayneInNL/dmf) is going to be implemented upon it.
 
+## PLEASE NOTE
+
+> I'm doing my master's thesis now. In order to save some time, now the latest py2flows code lies in [dmf](https://github.com/LayneInNL/dmf). You can find it in module dmf.flows.
+
+> After I finish my thesis, I will update this project.
+
 ## Supported language versions
 
 ### Python version
