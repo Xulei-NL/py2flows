@@ -194,7 +194,7 @@ class CFGVisitor(ast.NodeVisitor):
             return self.curr_block
         else:
             loop_block = self.new_block()
-            self.add_edge(self.curr_block.bid, loop_block.bid)
+            return self.add_edge(self.curr_block.bid, loop_block.bid)
 
     def add_FuncCFG(self, tree: ast.FunctionDef) -> None:
         func_id = self.curr_block.bid
